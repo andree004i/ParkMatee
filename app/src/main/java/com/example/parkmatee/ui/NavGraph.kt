@@ -89,11 +89,7 @@ fun ParkMateNavGraph(
 
     NavHost(
         navController = navController,
-
-        // Temporaneamente apriamo ParkingScreen come prima schermata
-        // per verificare il salvataggio delle sessioni.
-        startDestination = Routes.PARKING,
-
+        startDestination = Routes.VEHICLES,
         modifier = modifier
     ) {
         composable(Routes.VEHICLES) {
