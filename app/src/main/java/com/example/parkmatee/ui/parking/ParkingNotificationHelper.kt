@@ -54,16 +54,12 @@ fun ParkingNotificationEffect(
 
     LaunchedEffect(activeParkings) {
         activeParkings.forEach { session ->
-            if (notifiedStarted[session.id] != true) {
-                showParkingNotification(
-                    context = context,
-                    notificationId = START_NOTIFICATION_BASE_ID + session.id,
-                    title = "Parcheggio attivo",
-                    text = "Hai un parcheggio attivo. Ricordati di terminarlo quando riparti."
-                )
-                notifiedStarted[session.id] = true
-                lastActiveReminder[session.id] = System.currentTimeMillis()
-            }
+            notifyParkingStartedIfNeeded(
+                context = context,
+                session = session,
+                notifiedStarted = notifiedStarted,
+                lastActiveReminder = lastActiveReminder
+            )
         }
     }
 
@@ -72,15 +68,25 @@ fun ParkingNotificationEffect(
             val now = System.currentTimeMillis()
 
             latestActiveParkings.value.forEach { session ->
+                notifyParkingStartedIfNeeded(
+                    context = context,
+                    session = session,
+                    notifiedStarted = notifiedStarted,
+                    lastActiveReminder = lastActiveReminder
+                )
+
                 val lastReminder = lastActiveReminder[session.id] ?: session.startTime
                 if (now - lastReminder >= ACTIVE_REMINDER_INTERVAL_MILLIS) {
-                    showParkingNotification(
+                    val notificationShown = showParkingNotification(
                         context = context,
                         notificationId = ACTIVE_REMINDER_NOTIFICATION_BASE_ID + session.id,
                         title = "Reminder parcheggio attivo",
                         text = "Il parcheggio e attivo da ${formatNotificationDuration(now - session.startTime)}."
                     )
-                    lastActiveReminder[session.id] = now
+
+                    if (notificationShown) {
+                        lastActiveReminder[session.id] = now
+                    }
                 }
 
                 val expiryTime = session.expiryTime
@@ -91,23 +97,29 @@ fun ParkingNotificationEffect(
                         remainingMillis in 1L..TICKET_EXPIRING_WARNING_MILLIS &&
                         notifiedExpiring[session.id] != true
                     ) {
-                        showParkingNotification(
+                        val notificationShown = showParkingNotification(
                             context = context,
                             notificationId = EXPIRING_NOTIFICATION_BASE_ID + session.id,
                             title = "Ticket in scadenza",
                             text = "Il ticket scade tra ${formatNotificationDuration(remainingMillis)}."
                         )
-                        notifiedExpiring[session.id] = true
+
+                        if (notificationShown) {
+                            notifiedExpiring[session.id] = true
+                        }
                     }
 
                     if (remainingMillis <= 0L && notifiedExpired[session.id] != true) {
-                        showParkingNotification(
+                        val notificationShown = showParkingNotification(
                             context = context,
                             notificationId = EXPIRED_NOTIFICATION_BASE_ID + session.id,
                             title = "Ticket scaduto",
                             text = "Il ticket del parcheggio e scaduto."
                         )
-                        notifiedExpired[session.id] = true
+
+                        if (notificationShown) {
+                            notifiedExpired[session.id] = true
+                        }
                     }
                 }
             }
@@ -152,15 +164,38 @@ fun canShowParkingNotifications(
         NotificationManagerCompat.from(context).areNotificationsEnabled()
 }
 
+private fun notifyParkingStartedIfNeeded(
+    context: Context,
+    session: ParkingSession,
+    notifiedStarted: MutableMap<Int, Boolean>,
+    lastActiveReminder: MutableMap<Int, Long>
+) {
+    if (notifiedStarted[session.id] == true) {
+        return
+    }
+
+    val notificationShown = showParkingNotification(
+        context = context,
+        notificationId = START_NOTIFICATION_BASE_ID + session.id,
+        title = "Parcheggio attivo",
+        text = "Hai un parcheggio attivo. Ricordati di terminarlo quando riparti."
+    )
+
+    if (notificationShown) {
+        notifiedStarted[session.id] = true
+        lastActiveReminder[session.id] = System.currentTimeMillis()
+    }
+}
+
 @SuppressLint("MissingPermission")
 private fun showParkingNotification(
     context: Context,
     notificationId: Int,
     title: String,
     text: String
-) {
+): Boolean {
     if (!canShowParkingNotifications(context)) {
-        return
+        return false
     }
 
     ensureParkingNotificationChannel(context)
@@ -188,6 +223,8 @@ private fun showParkingNotification(
         notificationId,
         notification
     )
+
+    return true
 }
 
 private fun formatNotificationDuration(
@@ -212,4 +249,4 @@ private const val EXPIRING_NOTIFICATION_BASE_ID = 30_000
 private const val EXPIRED_NOTIFICATION_BASE_ID = 40_000
 private const val TICKET_EXPIRING_WARNING_MILLIS = 5 * 60 * 1_000L
 private const val ACTIVE_REMINDER_INTERVAL_MILLIS = 15 * 60 * 1_000L
-private const val NOTIFICATION_CHECK_INTERVAL_MILLIS = 30 * 1_000L
+private const val NOTIFICATION_CHECK_INTERVAL_MILLIS = 5 * 1_000L
