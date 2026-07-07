@@ -4,8 +4,11 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,22 +30,23 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.data.entity.SavedLocation
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.tasks.CancellationTokenSource
@@ -51,6 +55,7 @@ import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -61,6 +66,8 @@ fun ParkingScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    var pendingPhotoPath by remember { mutableStateOf<String?>(null) }
+    var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
 
     val locationPermissionLauncher =
         rememberLauncherForActivityResult(
@@ -78,6 +85,67 @@ fun ParkingScreen(
                 )
             }
         }
+
+    val takePictureLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.TakePicture()
+        ) { success ->
+            val photoPath = pendingPhotoPath
+
+            if (success && photoPath != null) {
+                viewModel.onPhotoCaptured(photoPath)
+            } else {
+                viewModel.onPhotoCaptureError(
+                    "Foto non scattata."
+                )
+            }
+
+            pendingPhotoPath = null
+            pendingPhotoUri = null
+        }
+
+    val cameraPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            val photoUri = pendingPhotoUri
+
+            if (isGranted && photoUri != null) {
+                takePictureLauncher.launch(photoUri)
+            } else {
+                pendingPhotoPath = null
+                pendingPhotoUri = null
+                viewModel.onPhotoCaptureError(
+                    "Permesso fotocamera non concesso."
+                )
+            }
+        }
+
+    fun startPhotoCapture() {
+        try {
+            val photoFile = createParkingPhotoFile(context)
+            val photoUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                photoFile
+            )
+
+            pendingPhotoPath = photoFile.absolutePath
+            pendingPhotoUri = photoUri
+
+            if (hasCameraPermission(context)) {
+                takePictureLauncher.launch(photoUri)
+            } else {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            }
+        } catch (exception: Exception) {
+            pendingPhotoPath = null
+            pendingPhotoUri = null
+            viewModel.onPhotoCaptureError(
+                "Errore durante la preparazione della fotocamera."
+            )
+        }
+    }
 
     ParkingContent(
         uiState = uiState,
@@ -102,6 +170,8 @@ fun ParkingScreen(
                 )
             }
         },
+        onTakePhotoClicked = ::startPhotoCapture,
+        onRemovePhotoClicked = viewModel::onRemovePhotoClicked,
         onNoteChanged = viewModel::onNoteChanged,
         onStartParkingClicked = viewModel::onStartParkingClicked,
         onEndParkingClicked = viewModel::onEndParkingClicked
@@ -120,6 +190,8 @@ private fun ParkingContent(
     onLongitudeChanged: (String) -> Unit,
     onSavedLocationSelected: (Int?) -> Unit,
     onUseCurrentLocationClicked: () -> Unit,
+    onTakePhotoClicked: () -> Unit,
+    onRemovePhotoClicked: () -> Unit,
     onNoteChanged: (String) -> Unit,
     onStartParkingClicked: () -> Unit,
     onEndParkingClicked: (ParkingSession) -> Unit
@@ -264,6 +336,12 @@ private fun ParkingContent(
             modifier = Modifier.fillMaxWidth()
         )
 
+        ParkingPhotoSection(
+            photoPath = uiState.photoPath,
+            onTakePhotoClicked = onTakePhotoClicked,
+            onRemovePhotoClicked = onRemovePhotoClicked
+        )
+
         OutlinedTextField(
             value = uiState.note,
             onValueChange = onNoteChanged,
@@ -297,6 +375,59 @@ private fun ParkingContent(
             uiState = uiState,
             onEndParkingClicked = onEndParkingClicked
         )
+    }
+}
+
+@Composable
+private fun ParkingPhotoSection(
+    photoPath: String?,
+    onTakePhotoClicked: () -> Unit,
+    onRemovePhotoClicked: () -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(text = "Foto parcheggio")
+
+        Button(
+            onClick = onTakePhotoClicked,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(text = if (photoPath == null) "Scatta foto" else "Scatta nuova foto")
+        }
+
+        photoPath?.let { path ->
+            ParkingPhotoPreview(photoPath = path)
+
+            OutlinedButton(
+                onClick = onRemovePhotoClicked,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = "Rimuovi foto")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ParkingPhotoPreview(
+    photoPath: String
+) {
+    val imageBitmap = remember(photoPath) {
+        BitmapFactory.decodeFile(photoPath)?.asImageBitmap()
+    }
+
+    if (imageBitmap != null) {
+        Image(
+            bitmap = imageBitmap,
+            contentDescription = "Foto parcheggio",
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp),
+            contentScale = ContentScale.Crop
+        )
+    } else {
+        Text(text = "Anteprima foto non disponibile.")
     }
 }
 
@@ -391,17 +522,6 @@ private fun ParkingPositionPickerMap(
             selectedPosition ?: defaultPosition,
             14f
         )
-    }
-
-    LaunchedEffect(selectedPosition) {
-        selectedPosition?.let { position ->
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(
-                    position,
-                    16f
-                )
-            )
-        }
     }
 
     Column(
@@ -538,6 +658,10 @@ private fun ActiveParkingItem(
                 Text(text = "Luogo: $savedLocationName")
             }
 
+            session.photoPath?.let {
+                ParkingPhotoPreview(photoPath = it)
+            }
+
             session.hourlyRate?.let { hourlyRate ->
                 Text(text = "Tariffa: $hourlyRate euro / ora")
             }
@@ -616,6 +740,31 @@ private fun hasFineLocationPermission(
         context,
         Manifest.permission.ACCESS_FINE_LOCATION
     ) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun hasCameraPermission(
+    context: Context
+): Boolean {
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.CAMERA
+    ) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun createParkingPhotoFile(
+    context: Context
+): File {
+    val photoDirectory = File(
+        context.cacheDir,
+        "parking_photos"
+    ).apply {
+        mkdirs()
+    }
+
+    return File(
+        photoDirectory,
+        "parking_${System.currentTimeMillis()}.jpg"
+    )
 }
 
 @SuppressLint("MissingPermission")
