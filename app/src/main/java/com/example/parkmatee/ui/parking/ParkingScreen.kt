@@ -30,8 +30,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,6 +61,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 @Composable
 fun ParkingScreen(
@@ -615,6 +618,17 @@ private fun ActiveParkingsSection(
     uiState: ParkingUiState,
     onEndParkingClicked: (ParkingSession) -> Unit
 ) {
+    var nowMillis by remember {
+        mutableLongStateOf(System.currentTimeMillis())
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowMillis = System.currentTimeMillis()
+            delay(1_000L)
+        }
+    }
+
     Text(text = "Parcheggi attivi")
 
     if (uiState.activeParkings.isEmpty()) {
@@ -629,6 +643,7 @@ private fun ActiveParkingsSection(
                     vehicleName = uiState.vehicles.firstOrNull { vehicle ->
                         vehicle.id == session.vehicleId
                     }?.name ?: "Veicolo sconosciuto",
+                    nowMillis = nowMillis,
                     onEndParkingClicked = onEndParkingClicked
                 )
             }
@@ -640,8 +655,15 @@ private fun ActiveParkingsSection(
 private fun ActiveParkingItem(
     session: ParkingSession,
     vehicleName: String,
+    nowMillis: Long,
     onEndParkingClicked: (ParkingSession) -> Unit
 ) {
+    val elapsedMillis = (nowMillis - session.startTime).coerceAtLeast(0L)
+    val liveCost = calculateLiveCost(
+        session = session,
+        elapsedMillis = elapsedMillis
+    )
+
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -652,6 +674,8 @@ private fun ActiveParkingItem(
             Text(text = vehicleName)
             Text(text = "Tipo: ${formatParkingType(session.type)}")
             Text(text = "Inizio: ${formatTime(session.startTime)}")
+            Text(text = "Tempo trascorso: ${formatDuration(elapsedMillis)}")
+            Text(text = "Costo attuale: ${formatCurrency(liveCost)}")
             Text(text = "Posizione: ${session.latitude}, ${session.longitude}")
 
             session.savedLocationName?.let { savedLocationName ->
@@ -663,15 +687,18 @@ private fun ActiveParkingItem(
             }
 
             session.hourlyRate?.let { hourlyRate ->
-                Text(text = "Tariffa: $hourlyRate euro / ora")
+                Text(text = "Tariffa: ${formatCurrency(hourlyRate)} / ora")
             }
 
             session.fixedCost?.let { fixedCost ->
-                Text(text = "Costo fisso: $fixedCost euro")
+                Text(text = "Costo fisso: ${formatCurrency(fixedCost)}")
             }
 
             session.expiryTime?.let { expiryTime ->
                 Text(text = "Scadenza: ${formatTime(expiryTime)}")
+                Text(
+                    text = "Countdown ticket: ${formatTicketCountdown(expiryTime - nowMillis)}"
+                )
             }
 
             session.note?.let { note ->
@@ -698,6 +725,66 @@ private fun formatParkingType(
         "hourly" -> "A ore"
         "fixed" -> "Ticket fisso"
         else -> type
+    }
+}
+
+private fun calculateLiveCost(
+    session: ParkingSession,
+    elapsedMillis: Long
+): Double {
+    return when (session.type) {
+        "hourly" -> {
+            val hourlyRate = session.hourlyRate ?: 0.0
+            hourlyRate * elapsedMillis.toDouble() / MILLIS_PER_HOUR
+        }
+        "fixed" -> session.fixedCost ?: 0.0
+        else -> 0.0
+    }
+}
+
+private fun formatCurrency(
+    value: Double
+): String {
+    return String.format(
+        Locale.getDefault(),
+        "%.2f euro",
+        value
+    )
+}
+
+private fun formatDuration(
+    durationMillis: Long
+): String {
+    val totalSeconds = durationMillis / MILLIS_PER_SECOND
+    val hours = totalSeconds / SECONDS_PER_HOUR
+    val minutes = (totalSeconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE
+    val seconds = totalSeconds % SECONDS_PER_MINUTE
+
+    return if (hours > 0) {
+        String.format(
+            Locale.getDefault(),
+            "%02d:%02d:%02d",
+            hours,
+            minutes,
+            seconds
+        )
+    } else {
+        String.format(
+            Locale.getDefault(),
+            "%02d:%02d",
+            minutes,
+            seconds
+        )
+    }
+}
+
+private fun formatTicketCountdown(
+    remainingMillis: Long
+): String {
+    return if (remainingMillis <= 0L) {
+        "Scaduto da ${formatDuration(-remainingMillis)}"
+    } else {
+        formatDuration(remainingMillis)
     }
 }
 
@@ -798,3 +885,8 @@ private fun fetchCurrentLocation(
         )
     }
 }
+
+private const val MILLIS_PER_SECOND = 1_000L
+private const val SECONDS_PER_MINUTE = 60L
+private const val SECONDS_PER_HOUR = 3_600L
+private const val MILLIS_PER_HOUR = 3_600_000.0
