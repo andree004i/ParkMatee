@@ -11,17 +11,20 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.parkmatee.data.db.DatabaseProvider
 import com.example.parkmatee.data.repository.ParkingRepository
+import com.example.parkmatee.data.repository.SavedLocationRepository
 import com.example.parkmatee.data.repository.VehicleRepository
-import com.example.parkmatee.ui.parking.ParkingScreen
-import com.example.parkmatee.ui.parking.ParkingViewModel
-import com.example.parkmatee.ui.vehicles.VehicleScreen
-import com.example.parkmatee.ui.vehicles.VehicleViewModel
 import com.example.parkmatee.ui.history.HistoryScreen
 import com.example.parkmatee.ui.history.HistoryViewModel
-import com.example.parkmatee.ui.stats.StatsScreen
-import com.example.parkmatee.ui.stats.StatsViewModel
 import com.example.parkmatee.ui.map.MapScreen
 import com.example.parkmatee.ui.map.MapViewModel
+import com.example.parkmatee.ui.parking.ParkingScreen
+import com.example.parkmatee.ui.parking.ParkingViewModel
+import com.example.parkmatee.ui.savedlocations.SavedLocationScreen
+import com.example.parkmatee.ui.savedlocations.SavedLocationViewModel
+import com.example.parkmatee.ui.stats.StatsScreen
+import com.example.parkmatee.ui.stats.StatsViewModel
+import com.example.parkmatee.ui.vehicles.VehicleScreen
+import com.example.parkmatee.ui.vehicles.VehicleViewModel
 
 object Routes {
     const val VEHICLES = "vehicles"
@@ -29,6 +32,7 @@ object Routes {
     const val HISTORY = "history"
     const val STATS = "stats"
     const val PARKING = "parking"
+    const val SAVED_LOCATIONS = "saved_locations"
 }
 
 @Composable
@@ -54,6 +58,12 @@ fun ParkMateNavGraph(
         )
     }
 
+    val savedLocationRepository = remember(database) {
+        SavedLocationRepository(
+            database.savedLocationDao()
+        )
+    }
+
     val vehicleViewModel: VehicleViewModel = viewModel(
         factory = VehicleViewModel.Factory(
             vehicleRepository
@@ -63,7 +73,14 @@ fun ParkMateNavGraph(
     val parkingViewModel: ParkingViewModel = viewModel(
         factory = ParkingViewModel.Factory(
             vehicleRepository = vehicleRepository,
-            parkingRepository = parkingRepository
+            parkingRepository = parkingRepository,
+            savedLocationRepository = savedLocationRepository
+        )
+    )
+
+    val savedLocationViewModel: SavedLocationViewModel = viewModel(
+        factory = SavedLocationViewModel.Factory(
+            savedLocationRepository
         )
     )
 
@@ -83,7 +100,8 @@ fun ParkMateNavGraph(
     val mapViewModel: MapViewModel = viewModel(
         factory = MapViewModel.Factory(
             vehicleRepository = vehicleRepository,
-            parkingRepository = parkingRepository
+            parkingRepository = parkingRepository,
+            savedLocationRepository = savedLocationRepository
         )
     )
 
@@ -95,6 +113,18 @@ fun ParkMateNavGraph(
         composable(Routes.VEHICLES) {
             VehicleScreen(
                 viewModel = vehicleViewModel
+            )
+        }
+
+        composable(Routes.PARKING) {
+            ParkingScreen(
+                viewModel = parkingViewModel
+            )
+        }
+
+        composable(Routes.SAVED_LOCATIONS) {
+            SavedLocationScreen(
+                viewModel = savedLocationViewModel
             )
         }
 
@@ -113,12 +143,6 @@ fun ParkMateNavGraph(
         composable(Routes.STATS) {
             StatsScreen(
                 viewModel = statsViewModel
-            )
-        }
-
-        composable(Routes.PARKING) {
-            ParkingScreen(
-                viewModel = parkingViewModel
             )
         }
     }
