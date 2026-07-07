@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -21,6 +23,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +33,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.parkmatee.data.entity.SavedLocation
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.rememberCameraPositionState
 
 @Composable
 fun SavedLocationScreen(
@@ -176,7 +187,9 @@ private fun SavedLocationDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = title) },
         text = {
-            Column {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = {
@@ -189,6 +202,18 @@ private fun SavedLocationDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                SavedLocationPickerMap(
+                    latitude = latitude,
+                    longitude = longitude,
+                    onPositionSelected = { position ->
+                        latitude = position.latitude.toString()
+                        longitude = position.longitude.toString()
+                        errorMessage = null
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 OutlinedTextField(
                     value = latitude,
                     onValueChange = {
@@ -196,6 +221,9 @@ private fun SavedLocationDialog(
                         errorMessage = null
                     },
                     label = { Text(text = "Latitudine") },
+                    supportingText = {
+                        Text(text = "Compilata dalla mappa o modificabile a mano")
+                    },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Decimal
                     ),
@@ -211,6 +239,9 @@ private fun SavedLocationDialog(
                         errorMessage = null
                     },
                     label = { Text(text = "Longitudine") },
+                    supportingText = {
+                        Text(text = "Compilata dalla mappa o modificabile a mano")
+                    },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Decimal
                     ),
@@ -261,6 +292,87 @@ private fun SavedLocationDialog(
                 Text(text = "Annulla")
             }
         }
+    )
+}
+
+@Composable
+private fun SavedLocationPickerMap(
+    latitude: String,
+    longitude: String,
+    onPositionSelected: (LatLng) -> Unit
+) {
+    val defaultPosition = LatLng(
+        44.4949,
+        11.3426
+    )
+
+    val selectedPosition = parseLatLng(
+        latitude = latitude,
+        longitude = longitude
+    )
+
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(
+            selectedPosition ?: defaultPosition,
+            14f
+        )
+    }
+
+    LaunchedEffect(selectedPosition) {
+        selectedPosition?.let { position ->
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(
+                    position,
+                    16f
+                )
+            )
+        }
+    }
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(text = "Tocca la mappa per scegliere le coordinate")
+
+        GoogleMap(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(220.dp),
+            cameraPositionState = cameraPositionState,
+            uiSettings = MapUiSettings(
+                zoomControlsEnabled = true,
+                myLocationButtonEnabled = false
+            ),
+            onMapClick = onPositionSelected
+        ) {
+            selectedPosition?.let { position ->
+                Marker(
+                    state = MarkerState(position = position),
+                    title = "Luogo salvato"
+                )
+            }
+        }
+    }
+}
+
+private fun parseLatLng(
+    latitude: String,
+    longitude: String
+): LatLng? {
+    val parsedLatitude = latitude.toCoordinateOrNull()
+    val parsedLongitude = longitude.toCoordinateOrNull()
+
+    if (parsedLatitude == null || parsedLongitude == null) {
+        return null
+    }
+
+    if (parsedLatitude !in -90.0..90.0 || parsedLongitude !in -180.0..180.0) {
+        return null
+    }
+
+    return LatLng(
+        parsedLatitude,
+        parsedLongitude
     )
 }
 
