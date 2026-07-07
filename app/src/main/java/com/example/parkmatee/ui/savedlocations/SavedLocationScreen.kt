@@ -8,12 +8,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.FloatingActionButton
@@ -47,12 +44,15 @@ fun SavedLocationScreen(
     viewModel: SavedLocationViewModel
 ) {
     val locations by viewModel.locations.collectAsState()
-    var showAddDialog by remember { mutableStateOf(false) }
-    var locationToEdit by remember { mutableStateOf<SavedLocation?>(null) }
+    var formMode by remember { mutableStateOf<SavedLocationFormMode?>(null) }
 
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
+            FloatingActionButton(
+                onClick = {
+                    formMode = SavedLocationFormMode.Add
+                }
+            ) {
                 Text("+")
             }
         }
@@ -61,6 +61,7 @@ fun SavedLocationScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -69,61 +70,51 @@ fun SavedLocationScreen(
                 style = MaterialTheme.typography.titleLarge
             )
 
+            formMode?.let { mode ->
+                SavedLocationForm(
+                    mode = mode,
+                    onSave = { name, latitude, longitude ->
+                        when (mode) {
+                            SavedLocationFormMode.Add -> {
+                                viewModel.addLocation(
+                                    name = name,
+                                    latitude = latitude,
+                                    longitude = longitude
+                                )
+                            }
+
+                            is SavedLocationFormMode.Edit -> {
+                                viewModel.updateLocation(
+                                    location = mode.location,
+                                    name = name,
+                                    latitude = latitude,
+                                    longitude = longitude
+                                )
+                            }
+                        }
+
+                        formMode = null
+                    },
+                    onCancel = {
+                        formMode = null
+                    }
+                )
+            }
+
             if (locations.isEmpty()) {
                 Text(text = "Non ci sono ancora luoghi salvati.")
             } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(locations) { location ->
-                        SavedLocationItem(
-                            location = location,
-                            onEdit = { locationToEdit = it },
-                            onDelete = viewModel::deleteLocation
-                        )
-                    }
+                locations.forEach { location ->
+                    SavedLocationItem(
+                        location = location,
+                        onEdit = {
+                            formMode = SavedLocationFormMode.Edit(it)
+                        },
+                        onDelete = viewModel::deleteLocation
+                    )
                 }
             }
         }
-    }
-
-    if (showAddDialog) {
-        SavedLocationDialog(
-            title = "Aggiungi luogo",
-            confirmButtonText = "Aggiungi",
-            initialName = "",
-            initialLatitude = "44.4949",
-            initialLongitude = "11.3426",
-            onConfirm = { name, latitude, longitude ->
-                viewModel.addLocation(
-                    name = name,
-                    latitude = latitude,
-                    longitude = longitude
-                )
-                showAddDialog = false
-            },
-            onDismiss = { showAddDialog = false }
-        )
-    }
-
-    locationToEdit?.let { location ->
-        SavedLocationDialog(
-            title = "Modifica luogo",
-            confirmButtonText = "Salva",
-            initialName = location.name,
-            initialLatitude = location.latitude.toString(),
-            initialLongitude = location.longitude.toString(),
-            onConfirm = { name, latitude, longitude ->
-                viewModel.updateLocation(
-                    location = location,
-                    name = name,
-                    latitude = latitude,
-                    longitude = longitude
-                )
-                locationToEdit = null
-            },
-            onDismiss = { locationToEdit = null }
-        )
     }
 }
 
@@ -169,130 +160,148 @@ private fun SavedLocationItem(
 }
 
 @Composable
-private fun SavedLocationDialog(
-    title: String,
-    confirmButtonText: String,
-    initialName: String,
-    initialLatitude: String,
-    initialLongitude: String,
-    onConfirm: (String, Double, Double) -> Unit,
-    onDismiss: () -> Unit
+private fun SavedLocationForm(
+    mode: SavedLocationFormMode,
+    onSave: (String, Double, Double) -> Unit,
+    onCancel: () -> Unit
 ) {
-    var name by remember(initialName) { mutableStateOf(initialName) }
-    var latitude by remember(initialLatitude) { mutableStateOf(initialLatitude) }
-    var longitude by remember(initialLongitude) { mutableStateOf(initialLongitude) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val editingLocation = (mode as? SavedLocationFormMode.Edit)?.location
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = title) },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState())
-            ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = {
-                        name = it
-                        errorMessage = null
-                    },
-                    label = { Text(text = "Nome") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+    var name by remember(editingLocation?.id) {
+        mutableStateOf(editingLocation?.name ?: "")
+    }
+    var latitude by remember(editingLocation?.id) {
+        mutableStateOf(editingLocation?.latitude?.toString() ?: "44.4949")
+    }
+    var longitude by remember(editingLocation?.id) {
+        mutableStateOf(editingLocation?.longitude?.toString() ?: "11.3426")
+    }
+    var errorMessage by remember(editingLocation?.id) {
+        mutableStateOf<String?>(null)
+    }
 
-                Spacer(modifier = Modifier.height(8.dp))
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = when (mode) {
+                    SavedLocationFormMode.Add -> "Aggiungi luogo"
+                    is SavedLocationFormMode.Edit -> "Modifica luogo"
+                },
+                style = MaterialTheme.typography.titleMedium
+            )
 
-                SavedLocationPickerMap(
-                    latitude = latitude,
-                    longitude = longitude,
-                    onPositionSelected = { position ->
-                        latitude = position.latitude.toString()
-                        longitude = position.longitude.toString()
-                        errorMessage = null
-                    }
-                )
+            OutlinedTextField(
+                value = name,
+                onValueChange = {
+                    name = it
+                    errorMessage = null
+                },
+                label = { Text(text = "Nome") },
+                modifier = Modifier.fillMaxWidth()
+            )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = latitude,
-                    onValueChange = {
-                        latitude = it
-                        errorMessage = null
-                    },
-                    label = { Text(text = "Latitudine") },
-                    supportingText = {
-                        Text(text = "Compilata dalla mappa o modificabile a mano")
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = longitude,
-                    onValueChange = {
-                        longitude = it
-                        errorMessage = null
-                    },
-                    label = { Text(text = "Longitudine") },
-                    supportingText = {
-                        Text(text = "Compilata dalla mappa o modificabile a mano")
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                errorMessage?.let { message ->
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = message)
+            SavedLocationPickerMap(
+                latitude = latitude,
+                longitude = longitude,
+                onPositionSelected = { position ->
+                    latitude = position.latitude.toString()
+                    longitude = position.longitude.toString()
+                    errorMessage = null
                 }
+            )
+
+            OutlinedTextField(
+                value = latitude,
+                onValueChange = {
+                    latitude = it
+                    errorMessage = null
+                },
+                label = { Text(text = "Latitudine") },
+                supportingText = {
+                    Text(text = "Compilata dalla mappa o modificabile a mano")
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = longitude,
+                onValueChange = {
+                    longitude = it
+                    errorMessage = null
+                },
+                label = { Text(text = "Longitudine") },
+                supportingText = {
+                    Text(text = "Compilata dalla mappa o modificabile a mano")
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            errorMessage?.let { message ->
+                Text(text = message)
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val parsedName = name.trim()
-                    val parsedLatitude = latitude.toCoordinateOrNull()
-                    val parsedLongitude = longitude.toCoordinateOrNull()
 
-                    when {
-                        parsedName.isBlank() -> {
-                            errorMessage = "Inserisci un nome."
-                        }
-
-                        parsedLatitude == null || parsedLatitude !in -90.0..90.0 -> {
-                            errorMessage = "Inserisci una latitudine valida."
-                        }
-
-                        parsedLongitude == null || parsedLongitude !in -180.0..180.0 -> {
-                            errorMessage = "Inserisci una longitudine valida."
-                        }
-
-                        else -> {
-                            onConfirm(
-                                parsedName,
-                                parsedLatitude,
-                                parsedLongitude
-                            )
-                        }
-                    }
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(text = confirmButtonText)
-            }
-        },
-        dismissButton = {
-            OutlinedButton(onClick = onDismiss) {
-                Text(text = "Annulla")
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = "Annulla")
+                }
+
+                Button(
+                    onClick = {
+                        val parsedName = name.trim()
+                        val parsedLatitude = latitude.toCoordinateOrNull()
+                        val parsedLongitude = longitude.toCoordinateOrNull()
+
+                        when {
+                            parsedName.isBlank() -> {
+                                errorMessage = "Inserisci un nome."
+                            }
+
+                            parsedLatitude == null || parsedLatitude !in -90.0..90.0 -> {
+                                errorMessage = "Inserisci una latitudine valida."
+                            }
+
+                            parsedLongitude == null || parsedLongitude !in -180.0..180.0 -> {
+                                errorMessage = "Inserisci una longitudine valida."
+                            }
+
+                            else -> {
+                                onSave(
+                                    parsedName,
+                                    parsedLatitude,
+                                    parsedLongitude
+                                )
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = when (mode) {
+                            SavedLocationFormMode.Add -> "Aggiungi"
+                            is SavedLocationFormMode.Edit -> "Salva"
+                        }
+                    )
+                }
             }
         }
-    )
+    }
 }
 
 @Composable
@@ -337,7 +346,7 @@ private fun SavedLocationPickerMap(
         GoogleMap(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp),
+                .height(240.dp),
             cameraPositionState = cameraPositionState,
             uiSettings = MapUiSettings(
                 zoomControlsEnabled = true,
@@ -353,6 +362,11 @@ private fun SavedLocationPickerMap(
             }
         }
     }
+}
+
+private sealed class SavedLocationFormMode {
+    data object Add : SavedLocationFormMode()
+    data class Edit(val location: SavedLocation) : SavedLocationFormMode()
 }
 
 private fun parseLatLng(
