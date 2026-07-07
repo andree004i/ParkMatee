@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,10 +41,11 @@ fun MainScreen() {
 fun BottomNavBar(navController: NavHostController) {
     val items = listOf(
         BottomNavItem(Routes.VEHICLES, "Veicoli", Icons.Default.DirectionsCar),
-        BottomNavItem(Routes.PARKING, "Parcheggio", Icons.Default.LocalParking),
+        BottomNavItem(Routes.PARKING, "Park", Icons.Default.LocalParking),
+        BottomNavItem(Routes.SAVED_LOCATIONS, "Luoghi", Icons.Default.Place),
         BottomNavItem(Routes.MAP, "Mappa", Icons.Default.Map),
         BottomNavItem(Routes.HISTORY, "Storico", Icons.Default.History),
-        BottomNavItem(Routes.STATS, "Statistiche", Icons.Default.BarChart),
+        BottomNavItem(Routes.STATS, "Stats", Icons.Default.BarChart),
     )
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
