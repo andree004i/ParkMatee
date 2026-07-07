@@ -38,16 +38,18 @@ fun ParkingNotificationEffect(
     }
 
     LaunchedEffect(activeIds) {
-        listOf(
-            notifiedStarted,
-            notifiedExpiring,
-            notifiedExpired,
-            lastActiveReminder
-        ).forEach { stateMap ->
-            stateMap.keys.toList()
-                .filter { id -> id !in activeIds }
-                .forEach { id -> stateMap.remove(id) }
-        }
+        notifiedStarted.keys.toList()
+            .filter { id -> id !in activeIds }
+            .forEach { id -> notifiedStarted.remove(id) }
+        notifiedExpiring.keys.toList()
+            .filter { id -> id !in activeIds }
+            .forEach { id -> notifiedExpiring.remove(id) }
+        notifiedExpired.keys.toList()
+            .filter { id -> id !in activeIds }
+            .forEach { id -> notifiedExpired.remove(id) }
+        lastActiveReminder.keys.toList()
+            .filter { id -> id !in activeIds }
+            .forEach { id -> lastActiveReminder.remove(id) }
     }
 
     LaunchedEffect(activeParkings) {
