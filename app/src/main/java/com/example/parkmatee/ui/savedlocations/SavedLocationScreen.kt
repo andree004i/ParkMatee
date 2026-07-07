@@ -20,7 +20,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.parkmatee.data.entity.SavedLocation
-import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
@@ -325,17 +323,6 @@ private fun SavedLocationPickerMap(
             selectedPosition ?: defaultPosition,
             14f
         )
-    }
-
-    LaunchedEffect(selectedPosition) {
-        selectedPosition?.let { position ->
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(
-                    position,
-                    16f
-                )
-            )
-        }
     }
 
     Column(
