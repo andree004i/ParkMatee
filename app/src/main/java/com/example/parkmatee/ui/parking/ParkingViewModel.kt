@@ -266,6 +266,35 @@ class ParkingViewModel(
         }
     }
 
+    fun onPhotoCaptured(photoPath: String) {
+        _uiState.update {
+            it.copy(
+                photoPath = photoPath,
+                errorMessage = null,
+                successMessage = "Foto parcheggio aggiunta."
+            )
+        }
+    }
+
+    fun onPhotoCaptureError(message: String) {
+        _uiState.update {
+            it.copy(
+                errorMessage = message,
+                successMessage = null
+            )
+        }
+    }
+
+    fun onRemovePhotoClicked() {
+        _uiState.update {
+            it.copy(
+                photoPath = null,
+                errorMessage = null,
+                successMessage = null
+            )
+        }
+    }
+
     fun onNoteChanged(
         value: String
     ) {
