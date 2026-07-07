@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.parkmatee.data.repository.ParkingRepository
+import com.example.parkmatee.data.repository.SavedLocationRepository
 import com.example.parkmatee.data.repository.VehicleRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,7 +14,8 @@ import kotlinx.coroutines.launch
 
 class MapViewModel(
     private val vehicleRepository: VehicleRepository,
-    private val parkingRepository: ParkingRepository
+    private val parkingRepository: ParkingRepository,
+    private val savedLocationRepository: SavedLocationRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MapUiState())
@@ -22,6 +24,7 @@ class MapViewModel(
     init {
         observeVehicles()
         observeActiveParkings()
+        observeSavedLocations()
     }
 
     private fun observeVehicles() {
@@ -39,6 +42,16 @@ class MapViewModel(
             parkingRepository.getActiveParkings().collect { activeParkings ->
                 _uiState.update {
                     it.copy(activeParkings = activeParkings)
+                }
+            }
+        }
+    }
+
+    private fun observeSavedLocations() {
+        viewModelScope.launch {
+            savedLocationRepository.getAllLocations().collect { savedLocations ->
+                _uiState.update {
+                    it.copy(savedLocations = savedLocations)
                 }
             }
         }
@@ -67,7 +80,8 @@ class MapViewModel(
 
     class Factory(
         private val vehicleRepository: VehicleRepository,
-        private val parkingRepository: ParkingRepository
+        private val parkingRepository: ParkingRepository,
+        private val savedLocationRepository: SavedLocationRepository
     ) : ViewModelProvider.Factory {
 
         override fun <T : ViewModel> create(
@@ -77,7 +91,8 @@ class MapViewModel(
                 @Suppress("UNCHECKED_CAST")
                 return MapViewModel(
                     vehicleRepository = vehicleRepository,
-                    parkingRepository = parkingRepository
+                    parkingRepository = parkingRepository,
+                    savedLocationRepository = savedLocationRepository
                 ) as T
             }
 
