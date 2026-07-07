@@ -755,7 +755,7 @@ private fun createParkingPhotoFile(
     context: Context
 ): File {
     val photoDirectory = File(
-        context.cacheDir,
+        context.filesDir,
         "parking_photos"
     ).apply {
         mkdirs()
