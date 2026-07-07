@@ -83,6 +83,7 @@ class ParkingViewModel(
             }
         }
     }
+
     fun onVehicleSelected(
         vehicleId: Int
     ) {
@@ -180,6 +181,32 @@ class ParkingViewModel(
             it.copy(
                 longitude = value,
                 errorMessage = null,
+                successMessage = null
+            )
+        }
+    }
+
+    fun onCurrentLocationLoaded(
+        latitude: Double,
+        longitude: Double
+    ) {
+        _uiState.update {
+            it.copy(
+                latitude = latitude.toString(),
+                longitude = longitude.toString(),
+                savedLocationName = null,
+                errorMessage = null,
+                successMessage = "Posizione attuale caricata."
+            )
+        }
+    }
+
+    fun onLocationError(
+        message: String
+    ) {
+        _uiState.update {
+            it.copy(
+                errorMessage = message,
                 successMessage = null
             )
         }
