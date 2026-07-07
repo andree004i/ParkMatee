@@ -73,6 +73,8 @@ fun ParkingScreen(
     var pendingPhotoPath by remember { mutableStateOf<String?>(null) }
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var notificationPermissionRefresh by remember { mutableLongStateOf(0L) }
+    var geofenceEnabled by remember { mutableStateOf(false) }
+    var geofencePermissionRefresh by remember { mutableLongStateOf(0L) }
 
     val locationPermissionLauncher =
         rememberLauncherForActivityResult(
@@ -133,6 +135,14 @@ fun ParkingScreen(
             notificationPermissionRefresh = System.currentTimeMillis()
         }
 
+    val geofenceLocationPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            geofencePermissionRefresh = System.currentTimeMillis()
+            geofenceEnabled = isGranted
+        }
+
     LaunchedEffect(Unit) {
         ensureParkingNotificationChannel(context)
     }
@@ -140,6 +150,13 @@ fun ParkingScreen(
     ParkingNotificationEffect(
         context = context,
         activeParkings = uiState.activeParkings
+    )
+
+    val geofenceUiState = rememberParkingGeofenceState(
+        context = context,
+        activeParkings = uiState.activeParkings,
+        enabled = geofenceEnabled,
+        permissionRefreshKey = geofencePermissionRefresh
     )
 
     val parkingNotificationsEnabled = remember(notificationPermissionRefresh) {
@@ -175,6 +192,7 @@ fun ParkingScreen(
     ParkingContent(
         uiState = uiState,
         parkingNotificationsEnabled = parkingNotificationsEnabled,
+        geofenceUiState = geofenceUiState,
         onVehicleSelected = viewModel::onVehicleSelected,
         onParkingTypeSelected = viewModel::onParkingTypeSelected,
         onHourlyRateChanged = viewModel::onHourlyRateChanged,
@@ -206,6 +224,20 @@ fun ParkingScreen(
                 notificationPermissionRefresh = System.currentTimeMillis()
             }
         },
+        onEnableGeofenceClicked = {
+            if (hasGeofenceLocationPermission(context)) {
+                geofencePermissionRefresh = System.currentTimeMillis()
+                geofenceEnabled = true
+            } else {
+                geofenceLocationPermissionLauncher.launch(
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                )
+            }
+        },
+        onDisableGeofenceClicked = {
+            geofenceEnabled = false
+            geofencePermissionRefresh = System.currentTimeMillis()
+        },
         onNoteChanged = viewModel::onNoteChanged,
         onStartParkingClicked = viewModel::onStartParkingClicked,
         onEndParkingClicked = viewModel::onEndParkingClicked
@@ -216,6 +248,7 @@ fun ParkingScreen(
 private fun ParkingContent(
     uiState: ParkingUiState,
     parkingNotificationsEnabled: Boolean,
+    geofenceUiState: ParkingGeofenceUiState,
     onVehicleSelected: (Int) -> Unit,
     onParkingTypeSelected: (ParkingType) -> Unit,
     onHourlyRateChanged: (String) -> Unit,
@@ -228,6 +261,8 @@ private fun ParkingContent(
     onTakePhotoClicked: () -> Unit,
     onRemovePhotoClicked: () -> Unit,
     onEnableNotificationsClicked: () -> Unit,
+    onEnableGeofenceClicked: () -> Unit,
+    onDisableGeofenceClicked: () -> Unit,
     onNoteChanged: (String) -> Unit,
     onStartParkingClicked: () -> Unit,
     onEndParkingClicked: (ParkingSession) -> Unit
@@ -402,6 +437,12 @@ private fun ParkingContent(
             onEnableNotificationsClicked = onEnableNotificationsClicked
         )
 
+        ParkingGeofenceSection(
+            geofenceUiState = geofenceUiState,
+            onEnableGeofenceClicked = onEnableGeofenceClicked,
+            onDisableGeofenceClicked = onDisableGeofenceClicked
+        )
+
         Spacer(modifier = Modifier.height(4.dp))
 
         Button(
@@ -417,6 +458,50 @@ private fun ParkingContent(
             uiState = uiState,
             onEndParkingClicked = onEndParkingClicked
         )
+    }
+}
+
+@Composable
+private fun ParkingGeofenceSection(
+    geofenceUiState: ParkingGeofenceUiState,
+    onEnableGeofenceClicked: () -> Unit,
+    onDisableGeofenceClicked: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(text = "Geofencing parcheggio")
+            Text(
+                text = if (geofenceUiState.enabled) {
+                    "Stato: attivo"
+                } else {
+                    "Stato: non attivo"
+                }
+            )
+            Text(text = geofenceUiState.message)
+            Text(text = "Raggio monitorato: 120 metri")
+            Text(text = "Parcheggi monitorati: ${geofenceUiState.monitoredCount}")
+
+            if (geofenceUiState.enabled) {
+                OutlinedButton(
+                    onClick = onDisableGeofenceClicked,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = "Disattiva geofencing")
+                }
+            } else {
+                Button(
+                    onClick = onEnableGeofenceClicked,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = "Attiva geofencing")
+                }
+            }
+        }
     }
 }
 
