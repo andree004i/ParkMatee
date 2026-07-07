@@ -19,6 +19,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -124,11 +127,18 @@ private fun MapContent(
         )
     }
 
+    var isMapLoaded by remember { mutableStateOf(false) }
+
     LaunchedEffect(
+        isMapLoaded,
         uiState.userLatitude,
         uiState.userLongitude,
         uiState.activeParkings
     ) {
+        if (!isMapLoaded) {
+            return@LaunchedEffect
+        }
+
         val target =
             userPosition
                 ?: firstParkingPosition
@@ -172,7 +182,10 @@ private fun MapContent(
             uiSettings = MapUiSettings(
                 zoomControlsEnabled = true,
                 myLocationButtonEnabled = hasLocationPermission
-            )
+            ),
+            onMapLoaded = {
+                isMapLoaded = true
+            }
         ) {
             userPosition?.let { position ->
                 Marker(
