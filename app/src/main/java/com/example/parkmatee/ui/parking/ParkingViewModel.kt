@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.data.repository.ParkingRepository
+import com.example.parkmatee.data.repository.SavedLocationRepository
 import com.example.parkmatee.data.repository.VehicleRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,7 +15,8 @@ import kotlinx.coroutines.launch
 
 class ParkingViewModel(
     private val vehicleRepository: VehicleRepository,
-    private val parkingRepository: ParkingRepository
+    private val parkingRepository: ParkingRepository,
+    private val savedLocationRepository: SavedLocationRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ParkingUiState())
@@ -23,6 +25,7 @@ class ParkingViewModel(
     init {
         observeVehicles()
         observeActiveParkings()
+        observeSavedLocations()
     }
 
     private fun observeVehicles() {
@@ -55,6 +58,26 @@ class ParkingViewModel(
             parkingRepository.getActiveParkings().collect { activeParkings ->
                 _uiState.update {
                     it.copy(activeParkings = activeParkings)
+                }
+            }
+        }
+    }
+
+    private fun observeSavedLocations() {
+        viewModelScope.launch {
+            savedLocationRepository.getAllLocations().collect { savedLocations ->
+                _uiState.update { currentState ->
+                    val selectedLocation = savedLocations.firstOrNull { location ->
+                        location.id == currentState.selectedSavedLocationId
+                    }
+
+                    currentState.copy(
+                        savedLocations = savedLocations,
+                        selectedSavedLocationId = selectedLocation?.id,
+                        savedLocationName = selectedLocation?.name
+                            ?: currentState.savedLocationName
+                                ?.takeIf { currentState.selectedSavedLocationId == null }
+                    )
                 }
             }
         }
@@ -168,6 +191,8 @@ class ParkingViewModel(
         _uiState.update {
             it.copy(
                 latitude = value,
+                selectedSavedLocationId = null,
+                savedLocationName = null,
                 errorMessage = null,
                 successMessage = null
             )
@@ -180,9 +205,37 @@ class ParkingViewModel(
         _uiState.update {
             it.copy(
                 longitude = value,
+                selectedSavedLocationId = null,
+                savedLocationName = null,
                 errorMessage = null,
                 successMessage = null
             )
+        }
+    }
+
+    fun onSavedLocationSelected(locationId: Int?) {
+        val selectedLocation = _uiState.value.savedLocations.firstOrNull { location ->
+            location.id == locationId
+        }
+
+        _uiState.update {
+            if (selectedLocation == null) {
+                it.copy(
+                    selectedSavedLocationId = null,
+                    savedLocationName = null,
+                    errorMessage = null,
+                    successMessage = null
+                )
+            } else {
+                it.copy(
+                    selectedSavedLocationId = selectedLocation.id,
+                    latitude = selectedLocation.latitude.toString(),
+                    longitude = selectedLocation.longitude.toString(),
+                    savedLocationName = selectedLocation.name,
+                    errorMessage = null,
+                    successMessage = "Luogo salvato selezionato."
+                )
+            }
         }
     }
 
@@ -194,6 +247,7 @@ class ParkingViewModel(
             it.copy(
                 latitude = latitude.toString(),
                 longitude = longitude.toString(),
+                selectedSavedLocationId = null,
                 savedLocationName = null,
                 errorMessage = null,
                 successMessage = "Posizione attuale caricata."
@@ -304,6 +358,7 @@ class ParkingViewModel(
                     it.copy(
                         selectedVehicleId = null,
                         selectedType = ParkingType.FREE,
+                        selectedSavedLocationId = null,
                         hourlyRate = "",
                         fixedCost = "",
                         expiryMinutes = "",
@@ -392,7 +447,8 @@ class ParkingViewModel(
 
     class Factory(
         private val vehicleRepository: VehicleRepository,
-        private val parkingRepository: ParkingRepository
+        private val parkingRepository: ParkingRepository,
+        private val savedLocationRepository: SavedLocationRepository
     ) : ViewModelProvider.Factory {
 
         override fun <T : ViewModel> create(
@@ -406,7 +462,8 @@ class ParkingViewModel(
                 @Suppress("UNCHECKED_CAST")
                 return ParkingViewModel(
                     vehicleRepository = vehicleRepository,
-                    parkingRepository = parkingRepository
+                    parkingRepository = parkingRepository,
+                    savedLocationRepository = savedLocationRepository
                 ) as T
             }
 
