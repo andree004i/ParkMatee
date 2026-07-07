@@ -27,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,7 +41,15 @@ import androidx.core.content.ContextCompat
 import com.example.parkmatee.data.entity.ParkingSession
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.tasks.CancellationTokenSource
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.rememberCameraPositionState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -207,6 +216,15 @@ private fun ParkingContent(
             Text(text = "Usa posizione attuale")
         }
 
+        ParkingPositionPickerMap(
+            latitude = uiState.latitude,
+            longitude = uiState.longitude,
+            onPositionSelected = { position ->
+                onLatitudeChanged(position.latitude.toString())
+                onLongitudeChanged(position.longitude.toString())
+            }
+        )
+
         OutlinedTextField(
             value = uiState.latitude,
             onValueChange = onLatitudeChanged,
@@ -214,7 +232,7 @@ private fun ParkingContent(
                 Text(text = "Latitudine")
             },
             supportingText = {
-                Text(text = "Compilata dal GPS oppure modificabile a mano")
+                Text(text = "Compilata dal GPS, dalla mappa o modificabile a mano")
             },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Decimal
@@ -229,7 +247,7 @@ private fun ParkingContent(
                 Text(text = "Longitudine")
             },
             supportingText = {
-                Text(text = "Compilata dal GPS oppure modificabile a mano")
+                Text(text = "Compilata dal GPS, dalla mappa o modificabile a mano")
             },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Decimal
@@ -270,6 +288,66 @@ private fun ParkingContent(
             uiState = uiState,
             onEndParkingClicked = onEndParkingClicked
         )
+    }
+}
+
+@Composable
+private fun ParkingPositionPickerMap(
+    latitude: String,
+    longitude: String,
+    onPositionSelected: (LatLng) -> Unit
+) {
+    val defaultPosition = LatLng(
+        44.4949,
+        11.3426
+    )
+
+    val selectedPosition = parseLatLng(
+        latitude = latitude,
+        longitude = longitude
+    )
+
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(
+            selectedPosition ?: defaultPosition,
+            14f
+        )
+    }
+
+    LaunchedEffect(selectedPosition) {
+        selectedPosition?.let { position ->
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(
+                    position,
+                    16f
+                )
+            )
+        }
+    }
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(text = "Tocca la mappa per scegliere il punto del parcheggio")
+
+        GoogleMap(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(260.dp),
+            cameraPositionState = cameraPositionState,
+            uiSettings = MapUiSettings(
+                zoomControlsEnabled = true,
+                myLocationButtonEnabled = false
+            ),
+            onMapClick = onPositionSelected
+        ) {
+            selectedPosition?.let { position ->
+                Marker(
+                    state = MarkerState(position = position),
+                    title = "Posizione parcheggio"
+                )
+            }
+        }
     }
 }
 
@@ -425,6 +503,27 @@ private fun formatTime(
     )
 
     return formatter.format(Date(timestamp))
+}
+
+private fun parseLatLng(
+    latitude: String,
+    longitude: String
+): LatLng? {
+    val parsedLatitude = latitude.replace(',', '.').toDoubleOrNull()
+    val parsedLongitude = longitude.replace(',', '.').toDoubleOrNull()
+
+    if (parsedLatitude == null || parsedLongitude == null) {
+        return null
+    }
+
+    if (parsedLatitude !in -90.0..90.0 || parsedLongitude !in -180.0..180.0) {
+        return null
+    }
+
+    return LatLng(
+        parsedLatitude,
+        parsedLongitude
+    )
 }
 
 private fun hasFineLocationPermission(
