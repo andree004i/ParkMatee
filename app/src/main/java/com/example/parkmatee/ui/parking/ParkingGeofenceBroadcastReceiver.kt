@@ -1,13 +1,16 @@
 package com.example.parkmatee.ui.parking
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.example.parkmatee.MainActivity
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingEvent
@@ -50,6 +53,10 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
         title: String,
         text: String
     ) {
+        if (!canShowNotifications(context)) {
+            return
+        }
+
         ensureGeofenceNotificationChannel(context)
 
         val pendingIntent = PendingIntent.getActivity(
@@ -78,6 +85,16 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
             GEOFENCE_NOTIFICATION_ID,
             notification
         )
+    }
+
+    private fun canShowNotifications(
+        context: Context
+    ): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun ensureGeofenceNotificationChannel(
