@@ -26,12 +26,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
@@ -102,6 +103,13 @@ private fun MapContent(
         )
     }
 
+    val firstSavedLocationPosition = uiState.savedLocations.firstOrNull()?.let { location ->
+        LatLng(
+            location.latitude,
+            location.longitude
+        )
+    }
+
     val userPosition =
         if (
             uiState.userLatitude != null &&
@@ -118,6 +126,7 @@ private fun MapContent(
     val initialPosition =
         userPosition
             ?: firstParkingPosition
+            ?: firstSavedLocationPosition
             ?: defaultPosition
 
     val cameraPositionState = rememberCameraPositionState {
@@ -133,7 +142,8 @@ private fun MapContent(
         isMapLoaded,
         uiState.userLatitude,
         uiState.userLongitude,
-        uiState.activeParkings
+        uiState.activeParkings,
+        uiState.savedLocations
     ) {
         if (!isMapLoaded) {
             return@LaunchedEffect
@@ -142,6 +152,7 @@ private fun MapContent(
         val target =
             userPosition
                 ?: firstParkingPosition
+                ?: firstSavedLocationPosition
                 ?: defaultPosition
 
         cameraPositionState.animate(
@@ -195,6 +206,22 @@ private fun MapContent(
                 )
             }
 
+            uiState.savedLocations.forEach { location ->
+                Marker(
+                    state = MarkerState(
+                        position = LatLng(
+                            location.latitude,
+                            location.longitude
+                        )
+                    ),
+                    title = location.name,
+                    snippet = "Luogo salvato",
+                    icon = BitmapDescriptorFactory.defaultMarker(
+                        BitmapDescriptorFactory.HUE_AZURE
+                    )
+                )
+            }
+
             uiState.activeParkings.forEach { session ->
                 val vehicleName = uiState.vehicles.firstOrNull { vehicle ->
                     vehicle.id == session.vehicleId
@@ -232,6 +259,9 @@ private fun ActiveParkingMapSummary(
         ) {
             Text(
                 text = "Parcheggi attivi: ${uiState.activeParkings.size}"
+            )
+            Text(
+                text = "Luoghi salvati: ${uiState.savedLocations.size}"
             )
 
             if (uiState.activeParkings.isEmpty()) {
