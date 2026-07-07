@@ -23,6 +23,17 @@ class VehicleViewModel(
         }
     }
 
+    fun updateVehicle(vehicle: Vehicle, name: String, type: String) {
+        viewModelScope.launch {
+            repository.updateVehicle(
+                vehicle.copy(
+                    name = name,
+                    type = type
+                )
+            )
+        }
+    }
+
     fun deleteVehicle(vehicle: Vehicle) {
         viewModelScope.launch {
             repository.deleteVehicle(vehicle)
