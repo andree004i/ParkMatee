@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.parkmatee.data.entity.ParkingSession
+import com.example.parkmatee.data.entity.SavedLocation
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -87,6 +88,7 @@ fun ParkingScreen(
         onExpiryMinutesChanged = viewModel::onExpiryMinutesChanged,
         onLatitudeChanged = viewModel::onLatitudeChanged,
         onLongitudeChanged = viewModel::onLongitudeChanged,
+        onSavedLocationSelected = viewModel::onSavedLocationSelected,
         onUseCurrentLocationClicked = {
             if (hasFineLocationPermission(context)) {
                 fetchCurrentLocation(
@@ -116,6 +118,7 @@ private fun ParkingContent(
     onExpiryMinutesChanged: (String) -> Unit,
     onLatitudeChanged: (String) -> Unit,
     onLongitudeChanged: (String) -> Unit,
+    onSavedLocationSelected: (Int?) -> Unit,
     onUseCurrentLocationClicked: () -> Unit,
     onNoteChanged: (String) -> Unit,
     onStartParkingClicked: () -> Unit,
@@ -209,6 +212,12 @@ private fun ParkingContent(
 
         Text(text = "Posizione parcheggio")
 
+        SavedLocationSelector(
+            savedLocations = uiState.savedLocations,
+            selectedSavedLocationId = uiState.selectedSavedLocationId,
+            onSavedLocationSelected = onSavedLocationSelected
+        )
+
         Button(
             onClick = onUseCurrentLocationClicked,
             modifier = Modifier.fillMaxWidth()
@@ -232,7 +241,7 @@ private fun ParkingContent(
                 Text(text = "Latitudine")
             },
             supportingText = {
-                Text(text = "Compilata dal GPS, dalla mappa o modificabile a mano")
+                Text(text = "Compilata da luogo salvato, GPS, mappa o a mano")
             },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Decimal
@@ -247,7 +256,7 @@ private fun ParkingContent(
                 Text(text = "Longitudine")
             },
             supportingText = {
-                Text(text = "Compilata dal GPS, dalla mappa o modificabile a mano")
+                Text(text = "Compilata da luogo salvato, GPS, mappa o a mano")
             },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Decimal
@@ -288,6 +297,76 @@ private fun ParkingContent(
             uiState = uiState,
             onEndParkingClicked = onEndParkingClicked
         )
+    }
+}
+
+@Composable
+private fun SavedLocationSelector(
+    savedLocations: List<SavedLocation>,
+    selectedSavedLocationId: Int?,
+    onSavedLocationSelected: (Int?) -> Unit
+) {
+    var menuExpanded by remember {
+        mutableStateOf(false)
+    }
+
+    val selectedLocation = savedLocations.firstOrNull { location ->
+        location.id == selectedSavedLocationId
+    }
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(text = "Luogo salvato")
+
+        if (savedLocations.isEmpty()) {
+            Text(text = "Nessun luogo salvato. Aggiungilo dalla schermata Luoghi.")
+        } else {
+            Box {
+                OutlinedButton(
+                    onClick = {
+                        menuExpanded = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = selectedLocation?.name
+                            ?: "Seleziona un luogo salvato"
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = {
+                        menuExpanded = false
+                    }
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(text = "Nessun luogo salvato")
+                        },
+                        onClick = {
+                            onSavedLocationSelected(null)
+                            menuExpanded = false
+                        }
+                    )
+
+                    savedLocations.forEach { location ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "${location.name} (${location.latitude}, ${location.longitude})"
+                                )
+                            },
+                            onClick = {
+                                onSavedLocationSelected(location.id)
+                                menuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -454,6 +533,10 @@ private fun ActiveParkingItem(
             Text(text = "Tipo: ${formatParkingType(session.type)}")
             Text(text = "Inizio: ${formatTime(session.startTime)}")
             Text(text = "Posizione: ${session.latitude}, ${session.longitude}")
+
+            session.savedLocationName?.let { savedLocationName ->
+                Text(text = "Luogo: $savedLocationName")
+            }
 
             session.hourlyRate?.let { hourlyRate ->
                 Text(text = "Tariffa: $hourlyRate euro / ora")
