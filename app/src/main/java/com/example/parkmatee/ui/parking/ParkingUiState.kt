@@ -1,6 +1,7 @@
 package com.example.parkmatee.ui.parking
 
 import com.example.parkmatee.data.entity.ParkingSession
+import com.example.parkmatee.data.entity.SavedLocation
 import com.example.parkmatee.data.entity.Vehicle
 
 enum class ParkingType(
@@ -15,9 +16,11 @@ enum class ParkingType(
 data class ParkingUiState(
     val vehicles: List<Vehicle> = emptyList(),
     val activeParkings: List<ParkingSession> = emptyList(),
+    val savedLocations: List<SavedLocation> = emptyList(),
 
     val selectedVehicleId: Int? = null,
     val selectedType: ParkingType = ParkingType.FREE,
+    val selectedSavedLocationId: Int? = null,
 
     val hourlyRate: String = "",
     val fixedCost: String = "",
