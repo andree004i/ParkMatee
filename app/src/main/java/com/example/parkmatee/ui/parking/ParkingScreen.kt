@@ -1,5 +1,11 @@
 package com.example.parkmatee.ui.parking
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,9 +33,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.example.parkmatee.data.entity.ParkingSession
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -39,6 +50,24 @@ fun ParkingScreen(
     viewModel: ParkingViewModel
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+
+    val locationPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            if (isGranted) {
+                fetchCurrentLocation(
+                    context = context,
+                    onLocationLoaded = viewModel::onCurrentLocationLoaded,
+                    onLocationError = viewModel::onLocationError
+                )
+            } else {
+                viewModel.onLocationError(
+                    "Permesso posizione non concesso."
+                )
+            }
+        }
 
     ParkingContent(
         uiState = uiState,
@@ -49,6 +78,19 @@ fun ParkingScreen(
         onExpiryMinutesChanged = viewModel::onExpiryMinutesChanged,
         onLatitudeChanged = viewModel::onLatitudeChanged,
         onLongitudeChanged = viewModel::onLongitudeChanged,
+        onUseCurrentLocationClicked = {
+            if (hasFineLocationPermission(context)) {
+                fetchCurrentLocation(
+                    context = context,
+                    onLocationLoaded = viewModel::onCurrentLocationLoaded,
+                    onLocationError = viewModel::onLocationError
+                )
+            } else {
+                locationPermissionLauncher.launch(
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                )
+            }
+        },
         onNoteChanged = viewModel::onNoteChanged,
         onStartParkingClicked = viewModel::onStartParkingClicked,
         onEndParkingClicked = viewModel::onEndParkingClicked
@@ -65,6 +107,7 @@ private fun ParkingContent(
     onExpiryMinutesChanged: (String) -> Unit,
     onLatitudeChanged: (String) -> Unit,
     onLongitudeChanged: (String) -> Unit,
+    onUseCurrentLocationClicked: () -> Unit,
     onNoteChanged: (String) -> Unit,
     onStartParkingClicked: () -> Unit,
     onEndParkingClicked: (ParkingSession) -> Unit
@@ -155,7 +198,14 @@ private fun ParkingContent(
             }
         }
 
-        Text(text = "Posizione temporanea")
+        Text(text = "Posizione parcheggio")
+
+        Button(
+            onClick = onUseCurrentLocationClicked,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(text = "Usa posizione attuale")
+        }
 
         OutlinedTextField(
             value = uiState.latitude,
@@ -164,7 +214,7 @@ private fun ParkingContent(
                 Text(text = "Latitudine")
             },
             supportingText = {
-                Text(text = "Esempio: 44.4949")
+                Text(text = "Compilata dal GPS oppure modificabile a mano")
             },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Decimal
@@ -179,7 +229,7 @@ private fun ParkingContent(
                 Text(text = "Longitudine")
             },
             supportingText = {
-                Text(text = "Esempio: 11.3426")
+                Text(text = "Compilata dal GPS oppure modificabile a mano")
             },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Decimal
@@ -375,4 +425,45 @@ private fun formatTime(
     )
 
     return formatter.format(Date(timestamp))
+}
+
+private fun hasFineLocationPermission(
+    context: Context
+): Boolean {
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+}
+
+@SuppressLint("MissingPermission")
+private fun fetchCurrentLocation(
+    context: Context,
+    onLocationLoaded: (Double, Double) -> Unit,
+    onLocationError: (String) -> Unit
+) {
+    val fusedLocationClient =
+        LocationServices.getFusedLocationProviderClient(context)
+
+    val cancellationTokenSource = CancellationTokenSource()
+
+    fusedLocationClient.getCurrentLocation(
+        Priority.PRIORITY_HIGH_ACCURACY,
+        cancellationTokenSource.token
+    ).addOnSuccessListener { location ->
+        if (location != null) {
+            onLocationLoaded(
+                location.latitude,
+                location.longitude
+            )
+        } else {
+            onLocationError(
+                "Posizione non disponibile. Controlla GPS/emulatore."
+            )
+        }
+    }.addOnFailureListener {
+        onLocationError(
+            "Errore durante il recupero della posizione."
+        )
+    }
 }
