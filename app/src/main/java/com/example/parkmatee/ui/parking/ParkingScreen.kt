@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -71,6 +72,7 @@ fun ParkingScreen(
     val context = LocalContext.current
     var pendingPhotoPath by remember { mutableStateOf<String?>(null) }
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var notificationPermissionRefresh by remember { mutableLongStateOf(0L) }
 
     val locationPermissionLauncher =
         rememberLauncherForActivityResult(
@@ -124,6 +126,26 @@ fun ParkingScreen(
             }
         }
 
+    val notificationPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) {
+            notificationPermissionRefresh = System.currentTimeMillis()
+        }
+
+    LaunchedEffect(Unit) {
+        ensureParkingNotificationChannel(context)
+    }
+
+    ParkingNotificationEffect(
+        context = context,
+        activeParkings = uiState.activeParkings
+    )
+
+    val parkingNotificationsEnabled = remember(notificationPermissionRefresh) {
+        canShowParkingNotifications(context)
+    }
+
     fun startPhotoCapture() {
         try {
             val photoFile = createParkingPhotoFile(context)
@@ -152,6 +174,7 @@ fun ParkingScreen(
 
     ParkingContent(
         uiState = uiState,
+        parkingNotificationsEnabled = parkingNotificationsEnabled,
         onVehicleSelected = viewModel::onVehicleSelected,
         onParkingTypeSelected = viewModel::onParkingTypeSelected,
         onHourlyRateChanged = viewModel::onHourlyRateChanged,
@@ -175,6 +198,14 @@ fun ParkingScreen(
         },
         onTakePhotoClicked = ::startPhotoCapture,
         onRemovePhotoClicked = viewModel::onRemovePhotoClicked,
+        onEnableNotificationsClicked = {
+            ensureParkingNotificationChannel(context)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                notificationPermissionRefresh = System.currentTimeMillis()
+            }
+        },
         onNoteChanged = viewModel::onNoteChanged,
         onStartParkingClicked = viewModel::onStartParkingClicked,
         onEndParkingClicked = viewModel::onEndParkingClicked
@@ -184,6 +215,7 @@ fun ParkingScreen(
 @Composable
 private fun ParkingContent(
     uiState: ParkingUiState,
+    parkingNotificationsEnabled: Boolean,
     onVehicleSelected: (Int) -> Unit,
     onParkingTypeSelected: (ParkingType) -> Unit,
     onHourlyRateChanged: (String) -> Unit,
@@ -195,6 +227,7 @@ private fun ParkingContent(
     onUseCurrentLocationClicked: () -> Unit,
     onTakePhotoClicked: () -> Unit,
     onRemovePhotoClicked: () -> Unit,
+    onEnableNotificationsClicked: () -> Unit,
     onNoteChanged: (String) -> Unit,
     onStartParkingClicked: () -> Unit,
     onEndParkingClicked: (ParkingSession) -> Unit
@@ -363,6 +396,12 @@ private fun ParkingContent(
             Text(text = message)
         }
 
+        NotificationReminderSection(
+            notificationsEnabled = parkingNotificationsEnabled,
+            activeParkings = uiState.activeParkings,
+            onEnableNotificationsClicked = onEnableNotificationsClicked
+        )
+
         Spacer(modifier = Modifier.height(4.dp))
 
         Button(
@@ -378,6 +417,43 @@ private fun ParkingContent(
             uiState = uiState,
             onEndParkingClicked = onEndParkingClicked
         )
+    }
+}
+
+@Composable
+private fun NotificationReminderSection(
+    notificationsEnabled: Boolean,
+    activeParkings: List<ParkingSession>,
+    onEnableNotificationsClicked: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(text = "Notifiche parcheggio")
+            Text(
+                text = if (notificationsEnabled) {
+                    "Stato: attive"
+                } else {
+                    "Stato: non attive"
+                }
+            )
+            Text(text = "Reminder parcheggio attivo: notifica subito e poi ogni 15 minuti.")
+            Text(text = "Ticket in scadenza: avviso quando mancano 5 minuti e alla scadenza.")
+            Text(text = "Parcheggi monitorati: ${activeParkings.size}")
+
+            if (!notificationsEnabled) {
+                Button(
+                    onClick = onEnableNotificationsClicked,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = "Abilita notifiche")
+                }
+            }
+        }
     }
 }
 
