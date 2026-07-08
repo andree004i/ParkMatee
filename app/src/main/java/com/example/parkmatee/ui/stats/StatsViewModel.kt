@@ -187,19 +187,26 @@ class StatsViewModel(
             Locale.getDefault()
         )
 
-        return completedParkings
+        val groupedEntries: List<Map.Entry<String, List<ParkingSession>>> = completedParkings
             .groupBy { session ->
                 formatter.format(Date(session.endTime ?: session.startTime))
             }
             .entries
-            .takeLast(MAX_DAILY_ENTRIES)
-            .map { entry ->
-                StatsChartEntry(
-                    label = entry.key,
-                    value = entry.value.size.toDouble(),
-                    displayValue = entry.value.size.toString()
-                )
-            }
+            .toList()
+
+        val startIndex = (groupedEntries.size - MAX_DAILY_ENTRIES).coerceAtLeast(0)
+        val visibleEntries = groupedEntries.subList(
+            startIndex,
+            groupedEntries.size
+        )
+
+        return visibleEntries.map { entry: Map.Entry<String, List<ParkingSession>> ->
+            StatsChartEntry(
+                label = entry.key,
+                value = entry.value.size.toDouble(),
+                displayValue = entry.value.size.toString()
+            )
+        }
     }
 
     private fun ParkingSession.durationMinutes(): Long {
