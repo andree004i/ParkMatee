@@ -69,81 +69,71 @@ class StatsViewModel(
             session.durationMinutes()
         }
 
+        val freeSessions = completedParkings.filter { session -> session.type == FREE_TYPE }
+        val hourlySessions = completedParkings.filter { session -> session.type == HOURLY_TYPE }
+        val fixedSessions = completedParkings.filter { session -> session.type == FIXED_TYPE }
+
+        val freeCost = freeSessions.sumOf { session -> session.finalOrEstimatedCost() }
+        val hourlyCost = hourlySessions.sumOf { session -> session.finalOrEstimatedCost() }
+        val fixedCost = fixedSessions.sumOf { session -> session.finalOrEstimatedCost() }
+
         val typeCountEntries = listOf(
             StatsChartEntry(
                 label = "Gratis",
-                value = completedParkings.count { session -> session.type == FREE_TYPE }.toDouble(),
-                displayValue = completedParkings.count { session -> session.type == FREE_TYPE }.toString()
+                value = freeSessions.size.toDouble(),
+                displayValue = freeSessions.size.toString()
             ),
             StatsChartEntry(
                 label = "Ore",
-                value = completedParkings.count { session -> session.type == HOURLY_TYPE }.toDouble(),
-                displayValue = completedParkings.count { session -> session.type == HOURLY_TYPE }.toString()
+                value = hourlySessions.size.toDouble(),
+                displayValue = hourlySessions.size.toString()
             ),
             StatsChartEntry(
                 label = "Ticket",
-                value = completedParkings.count { session -> session.type == FIXED_TYPE }.toDouble(),
-                displayValue = completedParkings.count { session -> session.type == FIXED_TYPE }.toString()
+                value = fixedSessions.size.toDouble(),
+                displayValue = fixedSessions.size.toString()
             )
         )
 
         val costByTypeEntries = listOf(
             StatsChartEntry(
                 label = "Gratis",
-                value = completedParkings
-                    .filter { session -> session.type == FREE_TYPE }
-                    .sumOf { session -> session.finalOrEstimatedCost() },
-                displayValue = formatCost(
-                    completedParkings
-                        .filter { session -> session.type == FREE_TYPE }
-                        .sumOf { session -> session.finalOrEstimatedCost() }
-                )
+                value = freeCost,
+                displayValue = formatCost(freeCost)
             ),
             StatsChartEntry(
                 label = "Ore",
-                value = completedParkings
-                    .filter { session -> session.type == HOURLY_TYPE }
-                    .sumOf { session -> session.finalOrEstimatedCost() },
-                displayValue = formatCost(
-                    completedParkings
-                        .filter { session -> session.type == HOURLY_TYPE }
-                        .sumOf { session -> session.finalOrEstimatedCost() }
-                )
+                value = hourlyCost,
+                displayValue = formatCost(hourlyCost)
             ),
             StatsChartEntry(
                 label = "Ticket",
-                value = completedParkings
-                    .filter { session -> session.type == FIXED_TYPE }
-                    .sumOf { session -> session.finalOrEstimatedCost() },
-                displayValue = formatCost(
-                    completedParkings
-                        .filter { session -> session.type == FIXED_TYPE }
-                        .sumOf { session -> session.finalOrEstimatedCost() }
-                )
+                value = fixedCost,
+                displayValue = formatCost(fixedCost)
             )
         )
 
         val durationByTypeEntries = listOf(
             buildAverageDurationEntry(
                 label = "Gratis",
-                sessions = completedParkings.filter { session -> session.type == FREE_TYPE }
+                sessions = freeSessions
             ),
             buildAverageDurationEntry(
                 label = "Ore",
-                sessions = completedParkings.filter { session -> session.type == HOURLY_TYPE }
+                sessions = hourlySessions
             ),
             buildAverageDurationEntry(
                 label = "Ticket",
-                sessions = completedParkings.filter { session -> session.type == FIXED_TYPE }
+                sessions = fixedSessions
             )
         )
 
         return StatsUiState(
             totalCompletedParkings = completedParkings.size,
             totalCost = completedParkings.sumOf { session -> session.finalOrEstimatedCost() },
-            freeCount = completedParkings.count { session -> session.type == FREE_TYPE },
-            hourlyCount = completedParkings.count { session -> session.type == HOURLY_TYPE },
-            fixedCount = completedParkings.count { session -> session.type == FIXED_TYPE },
+            freeCount = freeSessions.size,
+            hourlyCount = hourlySessions.size,
+            fixedCount = fixedSessions.size,
             averageDurationMinutes =
                 if (durations.isEmpty()) {
                     0L
@@ -164,7 +154,7 @@ class StatsViewModel(
         selectedPeriod: StatsPeriodFilter
     ): List<ParkingSession> {
         val days = selectedPeriod.days ?: return this
-        val startMillis = System.currentTimeMillis() - days * MILLIS_PER_DAY
+        val startMillis = System.currentTimeMillis() - days.toLong() * MILLIS_PER_DAY
 
         return filter { session ->
             val endTime = session.endTime ?: return@filter false
