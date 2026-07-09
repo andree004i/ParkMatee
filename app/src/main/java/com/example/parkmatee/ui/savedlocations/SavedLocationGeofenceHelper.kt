@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Location
 import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,6 +20,8 @@ import com.example.parkmatee.ui.parking.ParkingGeofenceBroadcastReceiver
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 
 @Composable
 fun rememberSavedLocationGeofenceState(
@@ -83,10 +86,6 @@ fun rememberSavedLocationGeofenceState(
         registerSavedLocationGeofences(
             context = context,
             geofencingRequest = GeofencingRequest.Builder()
-                .setInitialTrigger(
-                    GeofencingRequest.INITIAL_TRIGGER_ENTER or
-                        GeofencingRequest.INITIAL_TRIGGER_EXIT
-                )
                 .addGeofences(geofences)
                 .build(),
             pendingIntent = pendingIntent,
@@ -96,6 +95,11 @@ fun rememberSavedLocationGeofenceState(
                     active = true,
                     monitoredCount = enabledLocations.size,
                     message = "Geofencing attivo sui luoghi salvati selezionati."
+                )
+
+                notifyCurrentSavedLocationStatus(
+                    context = context,
+                    enabledLocations = enabledLocations
                 )
             },
             onError = {
@@ -165,6 +169,75 @@ private fun registerSavedLocationGeofences(
             onError()
         }
 }
+
+@SuppressLint("MissingPermission")
+private fun notifyCurrentSavedLocationStatus(
+    context: Context,
+    enabledLocations: List<SavedLocation>
+) {
+    if (enabledLocations.isEmpty()) {
+        return
+    }
+
+    val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+    val cancellationTokenSource = CancellationTokenSource()
+
+    fusedLocationClient.getCurrentLocation(
+        Priority.PRIORITY_HIGH_ACCURACY,
+        cancellationTokenSource.token
+    ).addOnSuccessListener { currentLocation ->
+        if (currentLocation == null) {
+            return@addOnSuccessListener
+        }
+
+        val closestLocationStatus = enabledLocations
+            .map { savedLocation ->
+                val distanceMeters = distanceBetweenMeters(
+                    currentLatitude = currentLocation.latitude,
+                    currentLongitude = currentLocation.longitude,
+                    savedLocation = savedLocation
+                )
+
+                SavedLocationDistanceStatus(
+                    savedLocation = savedLocation,
+                    distanceMeters = distanceMeters,
+                    isInside = distanceMeters <= savedLocation.geofenceRadiusMeters
+                )
+            }
+            .minByOrNull { status -> status.distanceMeters }
+            ?: return@addOnSuccessListener
+
+        ParkingGeofenceBroadcastReceiver.showSavedLocationStatusNotification(
+            context = context,
+            locationName = closestLocationStatus.savedLocation.name,
+            isInside = closestLocationStatus.isInside
+        )
+    }
+}
+
+private fun distanceBetweenMeters(
+    currentLatitude: Double,
+    currentLongitude: Double,
+    savedLocation: SavedLocation
+): Float {
+    val results = FloatArray(1)
+
+    Location.distanceBetween(
+        currentLatitude,
+        currentLongitude,
+        savedLocation.latitude,
+        savedLocation.longitude,
+        results
+    )
+
+    return results[0]
+}
+
+private data class SavedLocationDistanceStatus(
+    val savedLocation: SavedLocation,
+    val distanceMeters: Float,
+    val isInside: Boolean
+)
 
 private fun createSavedLocationGeofence(
     location: SavedLocation
