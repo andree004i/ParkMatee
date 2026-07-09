@@ -23,6 +23,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -33,6 +34,7 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.tasks.CancellationTokenSource
+import com.google.maps.android.compose.Circle
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
@@ -207,15 +209,31 @@ private fun MapContent(
             }
 
             uiState.savedLocations.forEach { location ->
+                val savedLocationPosition = LatLng(
+                    location.latitude,
+                    location.longitude
+                )
+
+                if (location.geofenceEnabled) {
+                    Circle(
+                        center = savedLocationPosition,
+                        radius = location.geofenceRadiusMeters.toDouble(),
+                        strokeWidth = 3f,
+                        strokeColor = Color(0xFF1976D2),
+                        fillColor = Color(0x331976D2)
+                    )
+                }
+
                 Marker(
                     state = MarkerState(
-                        position = LatLng(
-                            location.latitude,
-                            location.longitude
-                        )
+                        position = savedLocationPosition
                     ),
                     title = location.name,
-                    snippet = "Luogo salvato",
+                    snippet = if (location.geofenceEnabled) {
+                        "Luogo salvato - geofence ${location.geofenceRadiusMeters.toInt()} m"
+                    } else {
+                        "Luogo salvato"
+                    },
                     icon = BitmapDescriptorFactory.defaultMarker(
                         BitmapDescriptorFactory.HUE_AZURE
                     )
@@ -263,6 +281,20 @@ private fun ActiveParkingMapSummary(
             Text(
                 text = "Luoghi salvati: ${uiState.savedLocations.size}"
             )
+
+            val geofencedLocations = uiState.savedLocations.filter { location ->
+                location.geofenceEnabled
+            }
+
+            Text(
+                text = "Luoghi con geofence: ${geofencedLocations.size}"
+            )
+
+            geofencedLocations.forEach { location ->
+                Text(
+                    text = "${location.name}: raggio ${location.geofenceRadiusMeters.toInt()} m"
+                )
+            }
 
             if (uiState.activeParkings.isEmpty()) {
                 Text(text = "Nessun parcheggio attivo da mostrare sulla mappa.")
