@@ -54,7 +54,8 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
             context = context,
             title = title,
             text = text,
-            transition = transition
+            transition = transition,
+            notificationId = createUniqueNotificationId()
         )
     }
 
@@ -71,17 +72,16 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
     companion object {
         private const val SAVED_LOCATION_REQUEST_ID_PREFIX = "saved_location_"
         private const val GEOFENCE_NOTIFICATION_CHANNEL_ID = "parking_geofence"
-        private const val GEOFENCE_NOTIFICATION_ID = 50_000
-        private const val GEOFENCE_STATUS_NOTIFICATION_ID = 50_003
         private const val GEOFENCE_NOTIFICATION_CONTENT_REQUEST_CODE = 50_001
         private const val GEOFENCE_NOTIFICATION_ACTION_REQUEST_CODE = 50_002
-        private const val GEOFENCE_STATUS_REQUEST_CODE = 50_004
 
         fun showSavedLocationStatusNotification(
             context: Context,
             locationName: String,
-            isInside: Boolean
+            isInside: Boolean,
+            distanceMeters: Float
         ) {
+            val roundedDistance = distanceMeters.toInt()
             val title = if (isInside) {
                 "Sei dentro il raggio di $locationName"
             } else {
@@ -89,9 +89,9 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
             }
 
             val text = if (isInside) {
-                "Apri ParkMate per avviare un parcheggio in questo luogo salvato."
+                "Distanza: ${roundedDistance} m. Apri ParkMate per avviare un parcheggio."
             } else {
-                "Apri ParkMate per controllare o terminare il parcheggio collegato."
+                "Distanza: ${roundedDistance} m. Apri ParkMate per controllare o terminare il parcheggio."
             }
 
             val transition = if (isInside) {
@@ -105,8 +105,8 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
                 title = title,
                 text = text,
                 transition = transition,
-                notificationId = GEOFENCE_STATUS_NOTIFICATION_ID,
-                requestCode = GEOFENCE_STATUS_REQUEST_CODE
+                notificationId = createUniqueNotificationId(),
+                requestCode = createUniqueNotificationId()
             )
         }
 
@@ -115,7 +115,7 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
             title: String,
             text: String,
             transition: Int,
-            notificationId: Int = GEOFENCE_NOTIFICATION_ID,
+            notificationId: Int,
             requestCode: Int = GEOFENCE_NOTIFICATION_CONTENT_REQUEST_CODE
         ) {
             if (!canShowNotifications(context)) {
@@ -137,7 +137,7 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
 
             val actionIntent = createOpenAppPendingIntent(
                 context = context,
-                requestCode = GEOFENCE_NOTIFICATION_ACTION_REQUEST_CODE
+                requestCode = GEOFENCE_NOTIFICATION_ACTION_REQUEST_CODE + notificationId
             )
 
             val notification = NotificationCompat.Builder(
@@ -154,7 +154,8 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
                     actionIntent
                 )
                 .setAutoCancel(true)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setOnlyAlertOnce(false)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .build()
 
             val notificationManager =
@@ -178,6 +179,10 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
             )
         }
 
+        private fun createUniqueNotificationId(): Int {
+            return (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
+        }
+
         private fun canShowNotifications(
             context: Context
         ): Boolean {
@@ -198,7 +203,7 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
             val channel = NotificationChannel(
                 GEOFENCE_NOTIFICATION_CHANNEL_ID,
                 "Geofencing luoghi salvati",
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Notifiche quando entri, esci o sei gia dentro/fuori dai luoghi salvati"
             }
