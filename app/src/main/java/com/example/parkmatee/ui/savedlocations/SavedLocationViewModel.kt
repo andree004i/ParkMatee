@@ -50,6 +50,19 @@ class SavedLocationViewModel(
         }
     }
 
+    fun setGeofenceEnabled(
+        location: SavedLocation,
+        enabled: Boolean
+    ) {
+        viewModelScope.launch {
+            repository.update(
+                location.copy(
+                    geofenceEnabled = enabled
+                )
+            )
+        }
+    }
+
     fun deleteLocation(location: SavedLocation) {
         viewModelScope.launch {
             repository.delete(location)
