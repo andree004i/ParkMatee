@@ -27,31 +27,42 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
             return
         }
 
-        val title = when (geofencingEvent.geofenceTransition) {
-            Geofence.GEOFENCE_TRANSITION_ENTER -> "Sei vicino al parcheggio"
-            Geofence.GEOFENCE_TRANSITION_EXIT -> "Ti stai allontanando dal parcheggio"
-            Geofence.GEOFENCE_TRANSITION_DWELL -> "Sei ancora vicino al parcheggio"
+        val triggeredLocationName = geofencingEvent.triggeringGeofences
+            ?.firstOrNull()
+            ?.requestId
+            ?.toSavedLocationName()
+            ?: "luogo salvato"
+
+        val transition = geofencingEvent.geofenceTransition
+        val title = when (transition) {
+            Geofence.GEOFENCE_TRANSITION_ENTER -> "Sei vicino a $triggeredLocationName"
+            Geofence.GEOFENCE_TRANSITION_EXIT -> "Ti stai allontanando da $triggeredLocationName"
             else -> "Promemoria parcheggio"
         }
 
-        val text = when (geofencingEvent.geofenceTransition) {
-            Geofence.GEOFENCE_TRANSITION_ENTER -> "Hai raggiunto l'area del parcheggio salvato."
-            Geofence.GEOFENCE_TRANSITION_EXIT -> "Ti sei allontanato dall'area del parcheggio attivo."
-            Geofence.GEOFENCE_TRANSITION_DWELL -> "Il parcheggio attivo e ancora vicino alla tua posizione."
+        val text = when (transition) {
+            Geofence.GEOFENCE_TRANSITION_ENTER ->
+                "Apri ParkMate per avviare un parcheggio in questo luogo salvato."
+
+            Geofence.GEOFENCE_TRANSITION_EXIT ->
+                "Apri ParkMate per terminare il parcheggio collegato a questo luogo."
+
             else -> "Controlla il parcheggio attivo."
         }
 
         showGeofenceNotification(
             context = context,
             title = title,
-            text = text
+            text = text,
+            transition = transition
         )
     }
 
     private fun showGeofenceNotification(
         context: Context,
         title: String,
-        text: String
+        text: String,
+        transition: Int
     ) {
         if (!canShowNotifications(context)) {
             return
@@ -59,11 +70,20 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
 
         ensureGeofenceNotificationChannel(context)
 
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            0,
-            Intent(context, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val contentIntent = createOpenAppPendingIntent(
+            context = context,
+            requestCode = GEOFENCE_NOTIFICATION_CONTENT_REQUEST_CODE
+        )
+
+        val actionLabel = when (transition) {
+            Geofence.GEOFENCE_TRANSITION_ENTER -> "Avvia parcheggio"
+            Geofence.GEOFENCE_TRANSITION_EXIT -> "Termina parcheggio"
+            else -> "Apri ParkMate"
+        }
+
+        val actionIntent = createOpenAppPendingIntent(
+            context = context,
+            requestCode = GEOFENCE_NOTIFICATION_ACTION_REQUEST_CODE
         )
 
         val notification = NotificationCompat.Builder(
@@ -73,7 +93,12 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
             .setSmallIcon(android.R.drawable.ic_dialog_map)
             .setContentTitle(title)
             .setContentText(text)
-            .setContentIntent(pendingIntent)
+            .setContentIntent(contentIntent)
+            .addAction(
+                android.R.drawable.ic_dialog_map,
+                actionLabel,
+                actionIntent
+            )
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
@@ -84,6 +109,18 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
         notificationManager.notify(
             GEOFENCE_NOTIFICATION_ID,
             notification
+        )
+    }
+
+    private fun createOpenAppPendingIntent(
+        context: Context,
+        requestCode: Int
+    ): PendingIntent {
+        return PendingIntent.getActivity(
+            context,
+            requestCode,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
 
@@ -106,10 +143,10 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
 
         val channel = NotificationChannel(
             GEOFENCE_NOTIFICATION_CHANNEL_ID,
-            "Geofencing parcheggio",
+            "Geofencing luoghi salvati",
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = "Notifiche quando entri o esci dall'area del parcheggio"
+            description = "Notifiche quando entri o esci dai luoghi salvati"
         }
 
         val notificationManager =
@@ -118,8 +155,21 @@ class ParkingGeofenceBroadcastReceiver : BroadcastReceiver() {
         notificationManager.createNotificationChannel(channel)
     }
 
+    private fun String.toSavedLocationName(): String? {
+        if (!startsWith(SAVED_LOCATION_REQUEST_ID_PREFIX)) {
+            return null
+        }
+
+        return substringAfter(SAVED_LOCATION_REQUEST_ID_PREFIX)
+            .substringAfter("_", "luogo salvato")
+            .ifBlank { "luogo salvato" }
+    }
+
     companion object {
+        private const val SAVED_LOCATION_REQUEST_ID_PREFIX = "saved_location_"
         private const val GEOFENCE_NOTIFICATION_CHANNEL_ID = "parking_geofence"
         private const val GEOFENCE_NOTIFICATION_ID = 50_000
+        private const val GEOFENCE_NOTIFICATION_CONTENT_REQUEST_CODE = 50_001
+        private const val GEOFENCE_NOTIFICATION_ACTION_REQUEST_CODE = 50_002
     }
 }
