@@ -32,9 +32,6 @@ fun rememberSavedLocationGeofenceState(
     var uiState by remember {
         mutableStateOf(SavedLocationGeofenceUiState())
     }
-    var registeredIds by remember {
-        mutableStateOf(emptySet<String>())
-    }
 
     val enabledLocations = savedLocations.filter { location ->
         location.geofenceEnabled
@@ -50,12 +47,8 @@ fun rememberSavedLocationGeofenceState(
         val geofencingClient = LocationServices.getGeofencingClient(context)
         val pendingIntent = createSavedLocationGeofencePendingIntent(context)
 
-        if (registeredIds.isNotEmpty()) {
-            geofencingClient.removeGeofences(registeredIds.toList())
-            registeredIds = emptySet()
-        }
-
         if (enabledLocations.isEmpty()) {
+            geofencingClient.removeGeofences(pendingIntent)
             uiState = SavedLocationGeofenceUiState(
                 active = false,
                 monitoredCount = 0,
@@ -80,37 +73,38 @@ fun rememberSavedLocationGeofenceState(
         uiState = SavedLocationGeofenceUiState(
             active = true,
             monitoredCount = enabledLocations.size,
-            message = "Registrazione geofence dei luoghi salvati in corso..."
+            message = "Aggiornamento geofence dei luoghi salvati in corso..."
         )
 
-        registerSavedLocationGeofences(
-            context = context,
-            geofencingRequest = GeofencingRequest.Builder()
-                .addGeofences(geofences)
-                .build(),
-            pendingIntent = pendingIntent,
-            onSuccess = {
-                registeredIds = geofences.map { geofence -> geofence.requestId }.toSet()
-                uiState = SavedLocationGeofenceUiState(
-                    active = true,
-                    monitoredCount = enabledLocations.size,
-                    message = "Geofencing attivo sui luoghi salvati selezionati."
-                )
-
-                notifyCurrentSavedLocationStatus(
+        geofencingClient.removeGeofences(pendingIntent)
+            .addOnCompleteListener {
+                registerSavedLocationGeofences(
                     context = context,
-                    enabledLocations = enabledLocations
-                )
-            },
-            onError = {
-                registeredIds = emptySet()
-                uiState = SavedLocationGeofenceUiState(
-                    active = false,
-                    monitoredCount = enabledLocations.size,
-                    message = "Errore durante l'attivazione del geofencing."
+                    geofencingRequest = GeofencingRequest.Builder()
+                        .addGeofences(geofences)
+                        .build(),
+                    pendingIntent = pendingIntent,
+                    onSuccess = {
+                        uiState = SavedLocationGeofenceUiState(
+                            active = true,
+                            monitoredCount = enabledLocations.size,
+                            message = "Geofencing attivo sui luoghi salvati selezionati."
+                        )
+
+                        notifyCurrentSavedLocationStatus(
+                            context = context,
+                            enabledLocations = enabledLocations
+                        )
+                    },
+                    onError = {
+                        uiState = SavedLocationGeofenceUiState(
+                            active = false,
+                            monitoredCount = enabledLocations.size,
+                            message = "Errore durante l'attivazione del geofencing."
+                        )
+                    }
                 )
             }
-        )
     }
 
     return uiState
