@@ -28,6 +28,10 @@ interface ParkingDao {
     @Query("SELECT * FROM parking_sessions WHERE vehicleId = :vehicleId AND endTime IS NULL LIMIT 1")
     suspend fun getActiveSessionForVehicle(vehicleId: Int): ParkingSession?
 
+    // Sessione attiva collegata a un luogo salvato
+    @Query("SELECT * FROM parking_sessions WHERE savedLocationName = :savedLocationName AND endTime IS NULL LIMIT 1")
+    suspend fun getActiveSessionForSavedLocation(savedLocationName: String): ParkingSession?
+
     // Storico completo
     @Query("SELECT * FROM parking_sessions WHERE endTime IS NOT NULL ORDER BY startTime DESC")
     fun getParkingHistory(): Flow<List<ParkingSession>>
