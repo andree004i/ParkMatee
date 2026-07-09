@@ -36,10 +36,12 @@ fun rememberSavedLocationGeofenceState(
     val enabledLocations = savedLocations.filter { location ->
         location.geofenceEnabled
     }
-    val enabledLocationIds = enabledLocations.map { location -> location.id }.toSet()
+    val enabledLocationKey = enabledLocations.joinToString(separator = "|") { location ->
+        "${location.id}:${location.name}:${location.latitude}:${location.longitude}:${location.geofenceRadiusMeters}"
+    }
 
     LaunchedEffect(
-        enabledLocationIds,
+        enabledLocationKey,
         permissionRefreshKey
     ) {
         val geofencingClient = LocationServices.getGeofencingClient(context)
