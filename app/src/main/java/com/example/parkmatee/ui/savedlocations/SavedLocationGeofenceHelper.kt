@@ -176,37 +176,61 @@ private fun notifyCurrentSavedLocationStatus(
     val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
     val cancellationTokenSource = CancellationTokenSource()
 
+    fusedLocationClient.lastLocation
+        .addOnSuccessListener { lastKnownLocation ->
+            lastKnownLocation?.let { location ->
+                notifyClosestSavedLocationStatus(
+                    context = context,
+                    currentLocation = location,
+                    enabledLocations = enabledLocations
+                )
+            }
+        }
+
     fusedLocationClient.getCurrentLocation(
         Priority.PRIORITY_HIGH_ACCURACY,
         cancellationTokenSource.token
-    ).addOnSuccessListener { currentLocation ->
-        if (currentLocation == null) {
+    ).addOnSuccessListener { freshLocation ->
+        if (freshLocation == null) {
             return@addOnSuccessListener
         }
 
-        val closestLocationStatus = enabledLocations
-            .map { savedLocation ->
-                val distanceMeters = distanceBetweenMeters(
-                    currentLatitude = currentLocation.latitude,
-                    currentLongitude = currentLocation.longitude,
-                    savedLocation = savedLocation
-                )
-
-                SavedLocationDistanceStatus(
-                    savedLocation = savedLocation,
-                    distanceMeters = distanceMeters,
-                    isInside = distanceMeters <= savedLocation.geofenceRadiusMeters
-                )
-            }
-            .minByOrNull { status -> status.distanceMeters }
-            ?: return@addOnSuccessListener
-
-        ParkingGeofenceBroadcastReceiver.showSavedLocationStatusNotification(
+        notifyClosestSavedLocationStatus(
             context = context,
-            locationName = closestLocationStatus.savedLocation.name,
-            isInside = closestLocationStatus.isInside
+            currentLocation = freshLocation,
+            enabledLocations = enabledLocations
         )
     }
+}
+
+private fun notifyClosestSavedLocationStatus(
+    context: Context,
+    currentLocation: Location,
+    enabledLocations: List<SavedLocation>
+) {
+    val closestLocationStatus = enabledLocations
+        .map { savedLocation ->
+            val distanceMeters = distanceBetweenMeters(
+                currentLatitude = currentLocation.latitude,
+                currentLongitude = currentLocation.longitude,
+                savedLocation = savedLocation
+            )
+
+            SavedLocationDistanceStatus(
+                savedLocation = savedLocation,
+                distanceMeters = distanceMeters,
+                isInside = distanceMeters <= savedLocation.geofenceRadiusMeters
+            )
+        }
+        .minByOrNull { status -> status.distanceMeters }
+        ?: return
+
+    ParkingGeofenceBroadcastReceiver.showSavedLocationStatusNotification(
+        context = context,
+        locationName = closestLocationStatus.savedLocation.name,
+        isInside = closestLocationStatus.isInside,
+        distanceMeters = closestLocationStatus.distanceMeters
+    )
 }
 
 private fun distanceBetweenMeters(
