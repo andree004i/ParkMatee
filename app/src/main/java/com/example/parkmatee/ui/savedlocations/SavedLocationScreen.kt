@@ -1,5 +1,11 @@
 package com.example.parkmatee.ui.savedlocations
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,12 +28,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.example.parkmatee.data.entity.SavedLocation
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
@@ -41,8 +50,99 @@ import com.google.maps.android.compose.rememberCameraPositionState
 fun SavedLocationScreen(
     viewModel: SavedLocationViewModel
 ) {
+    val context = LocalContext.current
     val locations by viewModel.locations.collectAsState()
     var formMode by remember { mutableStateOf<SavedLocationFormMode?>(null) }
+    var pendingGeofenceLocation by remember { mutableStateOf<SavedLocation?>(null) }
+    var permissionRefreshKey by remember { mutableLongStateOf(0L) }
+
+    val geofenceUiState = rememberSavedLocationGeofenceState(
+        context = context,
+        savedLocations = locations,
+        permissionRefreshKey = permissionRefreshKey
+    )
+
+    fun refreshPermissions() {
+        permissionRefreshKey = System.currentTimeMillis()
+    }
+
+    fun enableGeofenceIfPossible(location: SavedLocation) {
+        if (hasSavedLocationGeofencePermission(context)) {
+            viewModel.setGeofenceEnabled(
+                location = location,
+                enabled = true
+            )
+            refreshPermissions()
+        } else {
+            pendingGeofenceLocation = location
+        }
+    }
+
+    val backgroundLocationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        val location = pendingGeofenceLocation
+        if (location != null && hasSavedLocationGeofencePermission(context)) {
+            viewModel.setGeofenceEnabled(
+                location = location,
+                enabled = true
+            )
+            pendingGeofenceLocation = null
+        }
+        refreshPermissions()
+    }
+
+    val fineLocationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        val location = pendingGeofenceLocation
+        if (location != null) {
+            if (needsBackgroundLocationPermission(context)) {
+                backgroundLocationPermissionLauncher.launch(
+                    Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                )
+            } else {
+                enableGeofenceIfPossible(location)
+            }
+        }
+        refreshPermissions()
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {
+        refreshPermissions()
+    }
+
+    fun requestGeofencePermissionsFor(location: SavedLocation) {
+        pendingGeofenceLocation = location
+
+        if (!hasFineLocationPermission(context)) {
+            fineLocationPermissionLauncher.launch(
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+            return
+        }
+
+        if (needsBackgroundLocationPermission(context)) {
+            backgroundLocationPermissionLauncher.launch(
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            )
+            return
+        }
+
+        enableGeofenceIfPossible(location)
+    }
+
+    fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermissionLauncher.launch(
+                Manifest.permission.POST_NOTIFICATIONS
+            )
+        } else {
+            refreshPermissions()
+        }
+    }
 
     Scaffold(
         floatingActionButton = {
@@ -66,6 +166,12 @@ fun SavedLocationScreen(
             Text(
                 text = "Luoghi salvati",
                 style = MaterialTheme.typography.titleLarge
+            )
+
+            SavedLocationGeofenceSection(
+                geofenceUiState = geofenceUiState,
+                notificationsEnabled = canShowSavedLocationGeofenceNotifications(context),
+                onEnableNotificationsClicked = ::requestNotificationPermission
             )
 
             formMode?.let { mode ->
@@ -108,8 +214,60 @@ fun SavedLocationScreen(
                         onEdit = {
                             formMode = SavedLocationFormMode.Edit(it)
                         },
-                        onDelete = viewModel::deleteLocation
+                        onDelete = viewModel::deleteLocation,
+                        onToggleGeofence = { selectedLocation ->
+                            if (selectedLocation.geofenceEnabled) {
+                                viewModel.setGeofenceEnabled(
+                                    location = selectedLocation,
+                                    enabled = false
+                                )
+                                refreshPermissions()
+                            } else {
+                                requestGeofencePermissionsFor(selectedLocation)
+                            }
+                        }
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SavedLocationGeofenceSection(
+    geofenceUiState: SavedLocationGeofenceUiState,
+    notificationsEnabled: Boolean,
+    onEnableNotificationsClicked: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = "Geofencing luoghi salvati",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = if (geofenceUiState.active) {
+                    "Stato: attivo"
+                } else {
+                    "Stato: non attivo"
+                }
+            )
+            Text(text = geofenceUiState.message)
+            Text(text = "Luoghi monitorati: ${geofenceUiState.monitoredCount}")
+            Text(text = "Entrata: propone di avviare un parcheggio.")
+            Text(text = "Uscita: propone di terminare il parcheggio rilevante.")
+
+            if (!notificationsEnabled) {
+                Button(
+                    onClick = onEnableNotificationsClicked,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = "Abilita notifiche geofence")
                 }
             }
         }
@@ -120,7 +278,8 @@ fun SavedLocationScreen(
 private fun SavedLocationItem(
     location: SavedLocation,
     onEdit: (SavedLocation) -> Unit,
-    onDelete: (SavedLocation) -> Unit
+    onDelete: (SavedLocation) -> Unit,
+    onToggleGeofence: (SavedLocation) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -134,6 +293,13 @@ private fun SavedLocationItem(
                 style = MaterialTheme.typography.titleMedium
             )
             Text(text = "${location.latitude}, ${location.longitude}")
+            Text(
+                text = if (location.geofenceEnabled) {
+                    "Geofence: attivo (${location.geofenceRadiusMeters.toInt()} m)"
+                } else {
+                    "Geofence: non attivo"
+                }
+            )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -147,11 +313,24 @@ private fun SavedLocationItem(
                 }
 
                 Button(
-                    onClick = { onDelete(location) },
+                    onClick = { onToggleGeofence(location) },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(text = "Elimina")
+                    Text(
+                        text = if (location.geofenceEnabled) {
+                            "Disattiva geofence"
+                        } else {
+                            "Attiva geofence"
+                        }
+                    )
                 }
+            }
+
+            Button(
+                onClick = { onDelete(location) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = "Elimina")
             }
         }
     }
@@ -375,6 +554,21 @@ private fun parseLatLng(
         parsedLatitude,
         parsedLongitude
     )
+}
+
+private fun hasFineLocationPermission(context: Context): Boolean {
+    return ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun needsBackgroundLocationPermission(context: Context): Boolean {
+    return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION
+        ) != PackageManager.PERMISSION_GRANTED
 }
 
 private fun String.toCoordinateOrNull(): Double? {
