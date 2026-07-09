@@ -214,15 +214,21 @@ private fun MapContent(
                     location.longitude
                 )
 
-                if (location.geofenceEnabled) {
-                    Circle(
-                        center = savedLocationPosition,
-                        radius = location.geofenceRadiusMeters.toDouble(),
-                        strokeWidth = 3f,
-                        strokeColor = Color(0xFF1976D2),
-                        fillColor = Color(0x331976D2)
-                    )
-                }
+                Circle(
+                    center = savedLocationPosition,
+                    radius = location.geofenceRadiusMeters.toDouble(),
+                    strokeWidth = if (location.geofenceEnabled) 4f else 2f,
+                    strokeColor = if (location.geofenceEnabled) {
+                        Color(0xFF1976D2)
+                    } else {
+                        Color(0xFF9E9E9E)
+                    },
+                    fillColor = if (location.geofenceEnabled) {
+                        Color(0x331976D2)
+                    } else {
+                        Color(0x229E9E9E)
+                    }
+                )
 
                 Marker(
                     state = MarkerState(
@@ -230,9 +236,9 @@ private fun MapContent(
                     ),
                     title = location.name,
                     snippet = if (location.geofenceEnabled) {
-                        "Luogo salvato - geofence ${location.geofenceRadiusMeters.toInt()} m"
+                        "Geofence attivo - raggio ${location.geofenceRadiusMeters.toInt()} m"
                     } else {
-                        "Luogo salvato"
+                        "Geofence non attivo - raggio ${location.geofenceRadiusMeters.toInt()} m"
                     },
                     icon = BitmapDescriptorFactory.defaultMarker(
                         BitmapDescriptorFactory.HUE_AZURE
@@ -287,12 +293,16 @@ private fun ActiveParkingMapSummary(
             }
 
             Text(
-                text = "Luoghi con geofence: ${geofencedLocations.size}"
+                text = "Luoghi con geofence attivo: ${geofencedLocations.size}"
             )
 
-            geofencedLocations.forEach { location ->
+            uiState.savedLocations.forEach { location ->
                 Text(
-                    text = "${location.name}: raggio ${location.geofenceRadiusMeters.toInt()} m"
+                    text = if (location.geofenceEnabled) {
+                        "${location.name}: geofence attivo, raggio ${location.geofenceRadiusMeters.toInt()} m"
+                    } else {
+                        "${location.name}: raggio visibile, geofence non attivo"
+                    }
                 )
             }
 
