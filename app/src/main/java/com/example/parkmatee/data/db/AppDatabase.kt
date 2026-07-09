@@ -11,7 +11,7 @@ import com.example.parkmatee.data.entity.Vehicle
 
 @Database(
     entities = [Vehicle::class, ParkingSession::class, SavedLocation::class],
-    version = 2
+    version = 3
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun vehicleDao(): VehicleDao
