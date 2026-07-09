@@ -31,6 +31,11 @@ class ParkingRepository(
     ): ParkingSession? =
         dao.getActiveSessionForVehicle(vehicleId)
 
+    suspend fun getActiveSessionForSavedLocation(
+        savedLocationName: String
+    ): ParkingSession? =
+        dao.getActiveSessionForSavedLocation(savedLocationName)
+
     suspend fun startParking(
         session: ParkingSession
     ) {
@@ -52,8 +57,6 @@ class ParkingRepository(
             )
         )
     }
-
-
 
     suspend fun updateParking(
         session: ParkingSession
@@ -94,7 +97,6 @@ class ParkingRepository(
             }
 
             "fixed" -> session.fixedCost
-
             else -> null
         }
     }
