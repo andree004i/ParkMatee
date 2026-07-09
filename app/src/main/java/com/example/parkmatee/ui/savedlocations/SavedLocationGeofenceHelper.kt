@@ -225,12 +225,35 @@ private fun notifyClosestSavedLocationStatus(
         .minByOrNull { status -> status.distanceMeters }
         ?: return
 
+    val hasActiveParking = DatabaseProviderAccess.hasActiveParkingForSavedLocation(
+        context = context,
+        savedLocationName = closestLocationStatus.savedLocation.name
+    )
+
     ParkingGeofenceBroadcastReceiver.showSavedLocationStatusNotification(
         context = context,
         locationName = closestLocationStatus.savedLocation.name,
         isInside = closestLocationStatus.isInside,
-        distanceMeters = closestLocationStatus.distanceMeters
+        distanceMeters = closestLocationStatus.distanceMeters,
+        hasActiveParking = hasActiveParking
     )
+}
+
+private object DatabaseProviderAccess {
+    fun hasActiveParkingForSavedLocation(
+        context: Context,
+        savedLocationName: String
+    ): Boolean {
+        return try {
+            kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                com.example.parkmatee.data.db.DatabaseProvider.getDatabase(context)
+                    .parkingDao()
+                    .getActiveSessionForSavedLocation(savedLocationName) != null
+            }
+        } catch (exception: Exception) {
+            false
+        }
+    }
 }
 
 private fun distanceBetweenMeters(
