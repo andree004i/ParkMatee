@@ -16,7 +16,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.example.parkmatee.data.entity.SavedLocation
-import com.example.parkmatee.ui.parking.ParkingGeofenceBroadcastReceiver
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
@@ -230,7 +229,7 @@ private fun notifyClosestSavedLocationStatus(
         savedLocationName = closestLocationStatus.savedLocation.name
     )
 
-    ParkingGeofenceBroadcastReceiver.showSavedLocationStatusNotification(
+    SavedLocationGeofenceBroadcastReceiver.showSavedLocationStatusNotification(
         context = context,
         locationName = closestLocationStatus.savedLocation.name,
         isInside = closestLocationStatus.isInside,
@@ -311,7 +310,7 @@ private fun createSavedLocationGeofencePendingIntent(
 ): PendingIntent {
     val intent = Intent(
         context,
-        ParkingGeofenceBroadcastReceiver::class.java
+        SavedLocationGeofenceBroadcastReceiver::class.java
     )
 
     return PendingIntent.getBroadcast(
