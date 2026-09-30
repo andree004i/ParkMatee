@@ -9,50 +9,47 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
+import kotlin.math.round
 
 class StatsViewModel(
     private val parkingRepository: ParkingRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(StatsUiState())
-    val uiState: StateFlow<StatsUiState> = _uiState.asStateFlow()
+    private val _selectedPeriod = MutableStateFlow(StatsPeriodFilter.ALL)
+    private val _errorMessage = MutableStateFlow<String?>(null)
 
-    private var fullHistory: List<ParkingSession> = emptyList()
-
-    init {
-        observeParkingHistory()
-    }
-
-    fun onPeriodSelected(
-        period: StatsPeriodFilter
-    ) {
-        _uiState.update { currentState ->
-            buildStats(
-                history = fullHistory,
-                selectedPeriod = period,
-                errorMessage = currentState.errorMessage
+    // Combinazione reattiva dello storico DB, del filtro e dei messaggi d'errore
+    val uiState: StateFlow<StatsUiState> = combine(
+        parkingRepository.getParkingHistory(),
+        _selectedPeriod,
+        _errorMessage
+    ) { history, selectedPeriod, errorMessage ->
+        buildStats(
+            history = history,
+            selectedPeriod = selectedPeriod,
+            errorMessage = errorMessage
+        )
+    }.catch { e ->
+        emit(
+            StatsUiState(
+                errorMessage = "Errore nel caricamento dello storico: ${e.localizedMessage}"
             )
-        }
-    }
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = StatsUiState()
+    )
 
-    private fun observeParkingHistory() {
-        viewModelScope.launch {
-            parkingRepository.getParkingHistory().collect { history ->
-                fullHistory = history
-
-                _uiState.update { currentState ->
-                    buildStats(
-                        history = history,
-                        selectedPeriod = currentState.selectedPeriod,
-                        errorMessage = null
-                    )
-                }
-            }
-        }
+    fun onPeriodSelected(period: StatsPeriodFilter) {
+        _selectedPeriod.update { period }
+        _errorMessage.value = null
     }
 
     private fun buildStats(
@@ -65,17 +62,16 @@ class StatsViewModel(
             .filterByPeriod(selectedPeriod)
             .sortedBy { session -> session.endTime ?: session.startTime }
 
-        val durations = completedParkings.map { session ->
-            session.durationMinutes()
-        }
+        val durations = completedParkings.map { session -> session.durationMinutes() }
 
         val freeSessions = completedParkings.filter { session -> session.type == FREE_TYPE }
         val hourlySessions = completedParkings.filter { session -> session.type == HOURLY_TYPE }
         val fixedSessions = completedParkings.filter { session -> session.type == FIXED_TYPE }
 
-        val freeCost = freeSessions.sumOf { session -> session.finalOrEstimatedCost() }
-        val hourlyCost = hourlySessions.sumOf { session -> session.finalOrEstimatedCost() }
-        val fixedCost = fixedSessions.sumOf { session -> session.finalOrEstimatedCost() }
+        val freeCost = roundToTwoDecimals(freeSessions.sumOf { session -> session.finalOrEstimatedCost() })
+        val hourlyCost = roundToTwoDecimals(hourlySessions.sumOf { session -> session.finalOrEstimatedCost() })
+        val fixedCost = roundToTwoDecimals(fixedSessions.sumOf { session -> session.finalOrEstimatedCost() })
+        val totalCost = roundToTwoDecimals(completedParkings.sumOf { session -> session.finalOrEstimatedCost() })
 
         val typeCountEntries = listOf(
             StatsChartEntry(
@@ -114,32 +110,15 @@ class StatsViewModel(
         )
 
         val durationByTypeEntries = listOf(
-            buildAverageDurationEntry(
-                label = "Gratis",
-                sessions = freeSessions
-            ),
-            buildAverageDurationEntry(
-                label = "Ore",
-                sessions = hourlySessions
-            ),
-            buildAverageDurationEntry(
-                label = "Ticket",
-                sessions = fixedSessions
-            )
+            buildAverageDurationEntry(label = "Gratis", sessions = freeSessions),
+            buildAverageDurationEntry(label = "Ore", sessions = hourlySessions),
+            buildAverageDurationEntry(label = "Ticket", sessions = fixedSessions)
         )
 
         return StatsUiState(
             totalCompletedParkings = completedParkings.size,
-            totalCost = completedParkings.sumOf { session -> session.finalOrEstimatedCost() },
-            freeCount = freeSessions.size,
-            hourlyCount = hourlySessions.size,
-            fixedCount = fixedSessions.size,
-            averageDurationMinutes =
-                if (durations.isEmpty()) {
-                    0L
-                } else {
-                    durations.sum() / durations.size
-                },
+            totalCost = totalCost,
+            averageDurationMinutes = if (durations.isEmpty()) 0L else durations.sum() / durations.size,
             longestDurationMinutes = durations.maxOrNull() ?: 0L,
             selectedPeriod = selectedPeriod,
             typeCountEntries = typeCountEntries,
@@ -182,44 +161,36 @@ class StatsViewModel(
     private fun buildDailyEntries(
         completedParkings: List<ParkingSession>
     ): List<StatsChartEntry> {
-        val formatter = SimpleDateFormat(
-            "dd/MM",
-            Locale.getDefault()
-        )
+        val sortFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val displayFormatter = SimpleDateFormat("dd/MM", Locale.getDefault())
 
-        val groupedEntries: List<Map.Entry<String, List<ParkingSession>>> = completedParkings
-            .groupBy { session ->
-                formatter.format(Date(session.endTime ?: session.startTime))
-            }
-            .entries
-            .toList()
+        val groupedMap = completedParkings.groupBy { session ->
+            sortFormatter.format(Date(session.endTime ?: session.startTime))
+        }
 
-        val startIndex = (groupedEntries.size - MAX_DAILY_ENTRIES).coerceAtLeast(0)
-        val visibleEntries = groupedEntries.subList(
-            startIndex,
-            groupedEntries.size
-        )
+        val sortedKeys = groupedMap.keys.sorted()
+        val startIndex = (sortedKeys.size - MAX_DAILY_ENTRIES).coerceAtLeast(0)
+        val visibleKeys = sortedKeys.subList(startIndex, sortedKeys.size)
 
-        return visibleEntries.map { entry: Map.Entry<String, List<ParkingSession>> ->
+        return visibleKeys.map { key ->
+            val sessionsInDay = groupedMap[key] ?: emptyList()
+            val dateObj = sortFormatter.parse(key) ?: Date()
+
             StatsChartEntry(
-                label = entry.key,
-                value = entry.value.size.toDouble(),
-                displayValue = entry.value.size.toString()
+                label = displayFormatter.format(dateObj),
+                value = sessionsInDay.size.toDouble(),
+                displayValue = sessionsInDay.size.toString()
             )
         }
     }
 
     private fun ParkingSession.durationMinutes(): Long {
         val endTime = endTime ?: return 0L
-
-        return ((endTime - startTime) / MILLIS_PER_MINUTE)
-            .coerceAtLeast(0L)
+        return ((endTime - startTime) / MILLIS_PER_MINUTE).coerceAtLeast(0L)
     }
 
     private fun ParkingSession.finalOrEstimatedCost(): Double {
-        finalCost?.let { cost ->
-            return cost
-        }
+        finalCost?.let { cost -> return cost }
 
         return when (type) {
             HOURLY_TYPE -> {
@@ -231,23 +202,20 @@ class StatsViewModel(
         }
     }
 
+    private fun roundToTwoDecimals(value: Double): Double {
+        return round(value * 100.0) / 100.0
+    }
+
     class Factory(
         private val parkingRepository: ParkingRepository
     ) : ViewModelProvider.Factory {
 
-        override fun <T : ViewModel> create(
-            modelClass: Class<T>
-        ): T {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(StatsViewModel::class.java)) {
                 @Suppress("UNCHECKED_CAST")
-                return StatsViewModel(
-                    parkingRepository = parkingRepository
-                ) as T
+                return StatsViewModel(parkingRepository = parkingRepository) as T
             }
-
-            throw IllegalArgumentException(
-                "Unknown ViewModel class: ${modelClass.name}"
-            )
+            throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }
     }
 
@@ -262,19 +230,11 @@ class StatsViewModel(
     }
 }
 
-private fun formatCost(
-    cost: Double
-): String {
-    return String.format(
-        Locale.getDefault(),
-        "%.2f euro",
-        cost
-    )
+private fun formatCost(cost: Double): String {
+    return String.format(Locale.getDefault(), "%.2f €", cost)
 }
 
-private fun formatDuration(
-    minutes: Long
-): String {
+private fun formatDuration(minutes: Long): String {
     val hours = minutes / 60
     val remainingMinutes = minutes % 60
 

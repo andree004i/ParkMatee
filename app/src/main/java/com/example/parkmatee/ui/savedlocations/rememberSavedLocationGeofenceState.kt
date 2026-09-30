@@ -15,12 +15,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import com.example.parkmatee.data.db.DatabaseProvider
 import com.example.parkmatee.data.entity.SavedLocation
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 @Composable
 fun rememberSavedLocationGeofenceState(
@@ -124,10 +128,10 @@ fun hasSavedLocationGeofencePermission(
     ) == PackageManager.PERMISSION_GRANTED
 
     val hasBackgroundLocation = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
 
     return hasFineLocation && hasBackgroundLocation
 }
@@ -136,10 +140,10 @@ fun canShowSavedLocationGeofenceNotifications(
     context: Context
 ): Boolean {
     return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.POST_NOTIFICATIONS
-        ) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
 }
 
 @SuppressLint("MissingPermission")
@@ -177,29 +181,27 @@ private fun notifyCurrentSavedLocationStatus(
 
     fusedLocationClient.lastLocation
         .addOnSuccessListener { lastKnownLocation ->
-            lastKnownLocation?.let { location ->
+            if (lastKnownLocation != null) {
                 notifyClosestSavedLocationStatus(
                     context = context,
-                    currentLocation = location,
+                    currentLocation = lastKnownLocation,
                     enabledLocations = enabledLocations
                 )
+            } else {
+                fusedLocationClient.getCurrentLocation(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    cancellationTokenSource.token
+                ).addOnSuccessListener { freshLocation ->
+                    freshLocation?.let { location ->
+                        notifyClosestSavedLocationStatus(
+                            context = context,
+                            currentLocation = location,
+                            enabledLocations = enabledLocations
+                        )
+                    }
+                }
             }
         }
-
-    fusedLocationClient.getCurrentLocation(
-        Priority.PRIORITY_HIGH_ACCURACY,
-        cancellationTokenSource.token
-    ).addOnSuccessListener { freshLocation ->
-        if (freshLocation == null) {
-            return@addOnSuccessListener
-        }
-
-        notifyClosestSavedLocationStatus(
-            context = context,
-            currentLocation = freshLocation,
-            enabledLocations = enabledLocations
-        )
-    }
 }
 
 private fun notifyClosestSavedLocationStatus(
@@ -224,34 +226,23 @@ private fun notifyClosestSavedLocationStatus(
         .minByOrNull { status -> status.distanceMeters }
         ?: return
 
-    val hasActiveParking = DatabaseProviderAccess.hasActiveParkingForSavedLocation(
-        context = context,
-        savedLocationName = closestLocationStatus.savedLocation.name
-    )
-
-    SavedLocationGeofenceBroadcastReceiver.showSavedLocationStatusNotification(
-        context = context,
-        locationName = closestLocationStatus.savedLocation.name,
-        isInside = closestLocationStatus.isInside,
-        distanceMeters = closestLocationStatus.distanceMeters,
-        hasActiveParking = hasActiveParking
-    )
-}
-
-private object DatabaseProviderAccess {
-    fun hasActiveParkingForSavedLocation(
-        context: Context,
-        savedLocationName: String
-    ): Boolean {
-        return try {
-            kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                com.example.parkmatee.data.db.DatabaseProvider.getDatabase(context)
-                    .parkingDao()
-                    .getActiveSessionForSavedLocation(savedLocationName) != null
-            }
-        } catch (exception: Exception) {
+    CoroutineScope(Dispatchers.IO).launch {
+        val hasActiveParking = try {
+            DatabaseProvider.getDatabase(context)
+                .parkingDao()
+                .getActiveSessionForSavedLocation(closestLocationStatus.savedLocation.name) != null
+        } catch (_: Exception) {
             false
         }
+
+        SavedLocationGeofenceBroadcastReceiver.showSavedLocationStatusNotification(
+            context = context,
+            savedLocationId = closestLocationStatus.savedLocation.id,
+            locationName = closestLocationStatus.savedLocation.name,
+            isInside = closestLocationStatus.isInside,
+            distanceMeters = closestLocationStatus.distanceMeters,
+            hasActiveParking = hasActiveParking
+        )
     }
 }
 
@@ -283,7 +274,7 @@ private fun createSavedLocationGeofence(
     location: SavedLocation
 ): Geofence {
     return Geofence.Builder()
-        .setRequestId(createSavedLocationRequestId(location))
+        .setRequestId(SavedLocationGeofenceRequestId.encode(location))
         .setCircularRegion(
             location.latitude,
             location.longitude,
@@ -291,18 +282,10 @@ private fun createSavedLocationGeofence(
         )
         .setTransitionTypes(
             Geofence.GEOFENCE_TRANSITION_ENTER or
-                Geofence.GEOFENCE_TRANSITION_EXIT
+                    Geofence.GEOFENCE_TRANSITION_EXIT
         )
         .setExpirationDuration(Geofence.NEVER_EXPIRE)
         .build()
-}
-
-private fun createSavedLocationRequestId(location: SavedLocation): String {
-    val safeName = location.name
-        .replace("_", " ")
-        .take(40)
-
-    return "saved_location_${location.id}_$safeName"
 }
 
 private fun createSavedLocationGeofencePendingIntent(

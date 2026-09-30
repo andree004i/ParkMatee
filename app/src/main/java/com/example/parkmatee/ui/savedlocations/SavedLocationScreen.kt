@@ -9,7 +9,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,6 +25,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -48,13 +48,29 @@ import com.google.maps.android.compose.rememberCameraPositionState
 
 @Composable
 fun SavedLocationScreen(
-    viewModel: SavedLocationViewModel
+    viewModel: SavedLocationViewModel,
+    savedLocationId: Int = -1
 ) {
     val context = LocalContext.current
     val locations by viewModel.locations.collectAsState()
     var formMode by remember { mutableStateOf<SavedLocationFormMode?>(null) }
     var pendingGeofenceLocation by remember { mutableStateOf<SavedLocation?>(null) }
     var permissionRefreshKey by remember { mutableLongStateOf(0L) }
+
+    // Flag per garantire che il deep-link/notifica venga gestito UNA SOLA VOLTA
+    // e non si riattivi a ogni aggiornamento della lista 'locations' da Room
+    var hasHandledDeepLink by remember(savedLocationId) { mutableStateOf(false) }
+
+    // Intercetta savedLocationId arrivato dalla navigazione/notifica
+    LaunchedEffect(savedLocationId, locations) {
+        if (savedLocationId != -1 && !hasHandledDeepLink) {
+            val locationToEdit = locations.firstOrNull { it.id == savedLocationId }
+            if (locationToEdit != null) {
+                formMode = SavedLocationFormMode.Edit(locationToEdit)
+                hasHandledDeepLink = true
+            }
+        }
+    }
 
     val geofenceUiState = rememberSavedLocationGeofenceState(
         context = context,
@@ -565,10 +581,10 @@ private fun hasFineLocationPermission(context: Context): Boolean {
 
 private fun needsBackgroundLocationPermission(context: Context): Boolean {
     return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION
-        ) != PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
 }
 
 private fun String.toCoordinateOrNull(): Double? {

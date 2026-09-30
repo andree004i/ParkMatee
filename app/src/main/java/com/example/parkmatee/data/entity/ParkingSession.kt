@@ -42,6 +42,8 @@ data class ParkingSession(
     val fixedCost: Double? = null,
     val expiryTime: Long? = null,
 
+    val warningMinutes: Int = 5,
+
     // Costo finale calcolato alla chiusura
     val finalCost: Double? = null,
 

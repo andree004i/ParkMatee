@@ -2,58 +2,58 @@ package com.example.parkmatee.data.repository
 
 import com.example.parkmatee.data.dao.ParkingDao
 import com.example.parkmatee.data.entity.ParkingSession
+import com.example.parkmatee.util.ParkingFormatters
 import kotlinx.coroutines.flow.Flow
 
 class ParkingRepository(
-    private val dao: ParkingDao
+    private val parkingDao: ParkingDao
 ) {
 
     fun getActiveParkings(): Flow<List<ParkingSession>> =
-        dao.getActiveParkings()
+        parkingDao.getActiveParkings()
 
     fun getParkingHistory(): Flow<List<ParkingSession>> =
-        dao.getParkingHistory()
+        parkingDao.getParkingHistory()
 
     fun getParkingsByVehicle(vehicleId: Int): Flow<List<ParkingSession>> =
-        dao.getParkingsByVehicle(vehicleId)
+        parkingDao.getParkingsByVehicle(vehicleId)
 
     fun getParkingsByType(type: String): Flow<List<ParkingSession>> =
-        dao.getParkingsByType(type)
+        parkingDao.getParkingsByType(type)
 
     fun getParkingsByTimeRange(
         from: Long,
         to: Long
     ): Flow<List<ParkingSession>> =
-        dao.getParkingsByTimeRange(from, to)
+        parkingDao.getParkingsByTimeRange(from, to)
 
     suspend fun getActiveSessionForVehicle(
         vehicleId: Int
     ): ParkingSession? =
-        dao.getActiveSessionForVehicle(vehicleId)
+        parkingDao.getActiveSessionForVehicle(vehicleId)
 
     suspend fun getActiveSessionForSavedLocation(
         savedLocationName: String
     ): ParkingSession? =
-        dao.getActiveSessionForSavedLocation(savedLocationName)
+        parkingDao.getActiveSessionForSavedLocation(savedLocationName)
 
     suspend fun startParking(
         session: ParkingSession
-    ) {
-        dao.insertParking(session)
+    ): Long {
+        return parkingDao.insertParking(session)
     }
 
     suspend fun endParking(
         session: ParkingSession
     ) {
         val endTime = System.currentTimeMillis()
+        val elapsedMillis = (endTime - session.startTime).coerceAtLeast(0L)
+        val calculatedCost = ParkingFormatters.calculateLiveCost(session, elapsedMillis)
 
-        dao.updateParking(
+        parkingDao.updateParking(
             session.copy(
                 endTime = endTime,
-                finalCost = calculateFinalCost(
-                    session = session,
-                    endTime = endTime
-                )
+                finalCost = calculatedCost
             )
         )
     }
@@ -61,47 +61,29 @@ class ParkingRepository(
     suspend fun updateParking(
         session: ParkingSession
     ) {
-        dao.updateParking(session)
+        parkingDao.updateParking(session)
     }
 
     suspend fun deleteParking(
         session: ParkingSession
     ) {
-        dao.deleteParking(session)
+        parkingDao.deleteParking(session)
     }
 
-    suspend fun closeActiveSessionIfExists(
-        vehicleId: Int
-    ) {
-        val activeSession = dao.getActiveSessionForVehicle(vehicleId)
-
+    suspend fun closeActiveSessionIfExists(vehicleId: Int): ParkingSession? {
+        val activeSession = parkingDao.getActiveSessionForVehicle(vehicleId)
         if (activeSession != null) {
-            endParking(activeSession)
+            val now = System.currentTimeMillis()
+            val elapsed = (now - activeSession.startTime).coerceAtLeast(0L)
+            val liveCost = ParkingFormatters.calculateLiveCost(activeSession, elapsed)
+
+            val updatedSession = activeSession.copy(
+                endTime = now,
+                finalCost = liveCost
+            )
+            parkingDao.updateParking(updatedSession)
+            return updatedSession
         }
-    }
-
-    private fun calculateFinalCost(
-        session: ParkingSession,
-        endTime: Long
-    ): Double? {
-        return when (session.type) {
-            "hourly" -> {
-                val hourlyRate = session.hourlyRate ?: return null
-                val elapsedMillis =
-                    (endTime - session.startTime).coerceAtLeast(0L)
-
-                val elapsedHours =
-                    elapsedMillis / MILLIS_PER_HOUR.toDouble()
-
-                elapsedHours * hourlyRate
-            }
-
-            "fixed" -> session.fixedCost
-            else -> null
-        }
-    }
-
-    companion object {
-        private const val MILLIS_PER_HOUR = 3_600_000L
+        return null
     }
 }

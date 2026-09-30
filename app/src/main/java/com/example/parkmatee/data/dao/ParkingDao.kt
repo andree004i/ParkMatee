@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.Flow
 interface ParkingDao {
 
     @Insert
-    suspend fun insertParking(parking: ParkingSession)
+    suspend fun insertParking(parking: ParkingSession): Long
 
     @Update
     suspend fun updateParking(parking: ParkingSession)
@@ -20,31 +20,36 @@ interface ParkingDao {
     @Delete
     suspend fun deleteParking(parking: ParkingSession)
 
-    // Sessioni attive (endTime null) — Flow per aggiornamento automatico UI
-    @Query("SELECT * FROM parking_sessions WHERE endTime IS NULL")
+    // --- SESSIONI ATTIVE ---
+    @Query("SELECT * FROM parking_sessions WHERE endTime IS NULL ORDER BY startTime DESC")
     fun getActiveParkings(): Flow<List<ParkingSession>>
 
-    // Sessione attiva per un veicolo specifico
     @Query("SELECT * FROM parking_sessions WHERE vehicleId = :vehicleId AND endTime IS NULL LIMIT 1")
     suspend fun getActiveSessionForVehicle(vehicleId: Int): ParkingSession?
 
-    // Sessione attiva collegata a un luogo salvato
     @Query("SELECT * FROM parking_sessions WHERE savedLocationName = :savedLocationName AND endTime IS NULL LIMIT 1")
     suspend fun getActiveSessionForSavedLocation(savedLocationName: String): ParkingSession?
 
-    // Storico completo
+    // --- STORICO E STATISTICHE (HistoryScreen & StatsScreen) ---
+    // Storico completo dei parcheggi terminati
     @Query("SELECT * FROM parking_sessions WHERE endTime IS NOT NULL ORDER BY startTime DESC")
     fun getParkingHistory(): Flow<List<ParkingSession>>
 
-    // Filtro per veicolo
+    // Tutti i parcheggi (attivi e storici) se necessari per le statistiche generali
+    @Query("SELECT * FROM parking_sessions ORDER BY startTime DESC")
+    fun getAllParkings(): Flow<List<ParkingSession>>
+
+    // Ricerca per ID singolo
+    @Query("SELECT * FROM parking_sessions WHERE id = :id LIMIT 1")
+    suspend fun getParkingById(id: Int): ParkingSession?
+
+    // --- FILTRI ---
     @Query("SELECT * FROM parking_sessions WHERE vehicleId = :vehicleId ORDER BY startTime DESC")
     fun getParkingsByVehicle(vehicleId: Int): Flow<List<ParkingSession>>
 
-    // Filtro per tipo
     @Query("SELECT * FROM parking_sessions WHERE type = :type ORDER BY startTime DESC")
     fun getParkingsByType(type: String): Flow<List<ParkingSession>>
 
-    // Filtro per intervallo di tempo
     @Query("SELECT * FROM parking_sessions WHERE startTime >= :from AND startTime <= :to ORDER BY startTime DESC")
     fun getParkingsByTimeRange(from: Long, to: Long): Flow<List<ParkingSession>>
 }

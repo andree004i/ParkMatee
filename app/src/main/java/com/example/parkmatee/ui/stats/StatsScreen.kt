@@ -23,7 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import java.util.Locale
+import com.example.parkmatee.util.ParkingFormatters
 
 @Composable
 fun StatsScreen(
@@ -72,7 +72,7 @@ private fun StatsContent(
 
             StatCard(
                 title = "Costo totale",
-                value = "${formatCost(uiState.totalCost)} euro",
+                value = ParkingFormatters.formatCurrency(uiState.totalCost),
                 modifier = Modifier.weight(1f)
             )
         }
@@ -83,13 +83,13 @@ private fun StatsContent(
         ) {
             StatCard(
                 title = "Durata media",
-                value = formatDuration(uiState.averageDurationMinutes),
+                value = ParkingFormatters.formatDuration(uiState.averageDurationMinutes * 60_000L),
                 modifier = Modifier.weight(1f)
             )
 
             StatCard(
                 title = "Durata più lunga",
-                value = formatDuration(uiState.longestDurationMinutes),
+                value = ParkingFormatters.formatDuration(uiState.longestDurationMinutes * 60_000L),
                 modifier = Modifier.weight(1f)
             )
         }
@@ -281,28 +281,5 @@ private fun HorizontalBarChart(
         }
 
         Spacer(modifier = Modifier.height(2.dp))
-    }
-}
-
-private fun formatCost(
-    cost: Double
-): String {
-    return String.format(
-        Locale.getDefault(),
-        "%.2f",
-        cost
-    )
-}
-
-private fun formatDuration(
-    minutes: Long
-): String {
-    val hours = minutes / 60
-    val remainingMinutes = minutes % 60
-
-    return if (hours > 0) {
-        "${hours}h ${remainingMinutes}min"
-    } else {
-        "${remainingMinutes}min"
     }
 }

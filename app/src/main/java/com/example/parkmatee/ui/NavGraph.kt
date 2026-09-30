@@ -6,9 +6,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.parkmatee.data.db.DatabaseProvider
 import com.example.parkmatee.data.repository.ParkingRepository
 import com.example.parkmatee.data.repository.SavedLocationRepository
@@ -116,15 +118,51 @@ fun ParkMateNavGraph(
             )
         }
 
-        composable(Routes.PARKING) {
+        // Configurazione rotta PARKING con parametri opzionali per la geofence
+        composable(
+            route = "${Routes.PARKING}?savedLocationId={savedLocationId}&autoStart={autoStart}&autoEnd={autoEnd}",
+            arguments = listOf(
+                navArgument("savedLocationId") {
+                    type = NavType.IntType
+                    defaultValue = -1
+                },
+                navArgument("autoStart") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
+                navArgument("autoEnd") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
+            )
+        ) { backStackEntry ->
+            val savedLocationId = backStackEntry.arguments?.getInt("savedLocationId") ?: -1
+            val autoStart = backStackEntry.arguments?.getBoolean("autoStart") ?: false
+            val autoEnd = backStackEntry.arguments?.getBoolean("autoEnd") ?: false
+
             ParkingScreen(
-                viewModel = parkingViewModel
+                viewModel = parkingViewModel,
+                savedLocationId = savedLocationId,
+                autoStart = autoStart,
+                autoEnd = autoEnd
             )
         }
 
-        composable(Routes.SAVED_LOCATIONS) {
+        // Configurazione rotta SAVED_LOCATIONS con parametro opzionale
+        composable(
+            route = "${Routes.SAVED_LOCATIONS}?savedLocationId={savedLocationId}",
+            arguments = listOf(
+                navArgument("savedLocationId") {
+                    type = NavType.IntType
+                    defaultValue = -1
+                }
+            )
+        ) { backStackEntry ->
+            val savedLocationId = backStackEntry.arguments?.getInt("savedLocationId") ?: -1
+
             SavedLocationScreen(
-                viewModel = savedLocationViewModel
+                viewModel = savedLocationViewModel,
+                savedLocationId = savedLocationId
             )
         }
 

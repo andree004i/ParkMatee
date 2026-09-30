@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
@@ -24,30 +25,40 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.data.entity.SavedLocation
+import com.example.parkmatee.notification.canShowParkingNotifications
+import com.example.parkmatee.notification.ensureParkingNotificationChannel
+import com.example.parkmatee.util.ParkingFormatters
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.model.CameraPosition
@@ -59,20 +70,59 @@ import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ParkingScreen(
-    viewModel: ParkingViewModel
+    viewModel: ParkingViewModel,
+    savedLocationId: Int = -1,
+    autoStart: Boolean = false,
+    autoEnd: Boolean = false
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     var pendingPhotoPath by remember { mutableStateOf<String?>(null) }
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var notificationPermissionRefresh by remember { mutableLongStateOf(0L) }
+
+    // Osserva il ciclo di vita per aggiornare lo stato del permesso allarmi esatti al ritorno dalle Impostazioni
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshExactAlarmPermission()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    var hasHandledGeofenceAction by remember(savedLocationId, autoStart, autoEnd) {
+        mutableStateOf(false)
+    }
+
+    LaunchedEffect(savedLocationId, autoStart, autoEnd, uiState.savedLocations) {
+        if (savedLocationId != -1 && !hasHandledGeofenceAction && uiState.savedLocations.isNotEmpty()) {
+            viewModel.onSavedLocationSelected(savedLocationId)
+
+            if (autoStart) {
+                viewModel.onStartParkingClicked()
+                hasHandledGeofenceAction = true
+            } else if (autoEnd) {
+                val locationName = uiState.savedLocations.firstOrNull { it.id == savedLocationId }?.name
+                val activeSession = uiState.activeParkings.firstOrNull { it.savedLocationName == locationName }
+                if (activeSession != null) {
+                    viewModel.onEndParkingClicked(activeSession)
+                }
+                hasHandledGeofenceAction = true
+            }
+        }
+    }
 
     val locationPermissionLauncher =
         rememberLauncherForActivityResult(
@@ -85,9 +135,7 @@ fun ParkingScreen(
                     onLocationError = viewModel::onLocationError
                 )
             } else {
-                viewModel.onLocationError(
-                    "Permesso posizione non concesso."
-                )
+                viewModel.onLocationError("Permesso posizione non concesso.")
             }
         }
 
@@ -96,15 +144,11 @@ fun ParkingScreen(
             contract = ActivityResultContracts.TakePicture()
         ) { success ->
             val photoPath = pendingPhotoPath
-
             if (success && photoPath != null) {
                 viewModel.onPhotoCaptured(photoPath)
             } else {
-                viewModel.onPhotoCaptureError(
-                    "Foto non scattata."
-                )
+                viewModel.onPhotoCaptureError("Foto non scattata.")
             }
-
             pendingPhotoPath = null
             pendingPhotoUri = null
         }
@@ -114,15 +158,12 @@ fun ParkingScreen(
             contract = ActivityResultContracts.RequestPermission()
         ) { isGranted ->
             val photoUri = pendingPhotoUri
-
             if (isGranted && photoUri != null) {
                 takePictureLauncher.launch(photoUri)
             } else {
                 pendingPhotoPath = null
                 pendingPhotoUri = null
-                viewModel.onPhotoCaptureError(
-                    "Permesso fotocamera non concesso."
-                )
+                viewModel.onPhotoCaptureError("Permesso fotocamera non concesso.")
             }
         }
 
@@ -136,11 +177,6 @@ fun ParkingScreen(
     LaunchedEffect(Unit) {
         ensureParkingNotificationChannel(context)
     }
-
-    ParkingNotificationEffect(
-        context = context,
-        activeParkings = uiState.activeParkings
-    )
 
     val parkingNotificationsEnabled = remember(notificationPermissionRefresh) {
         canShowParkingNotifications(context)
@@ -166,20 +202,20 @@ fun ParkingScreen(
         } catch (exception: Exception) {
             pendingPhotoPath = null
             pendingPhotoUri = null
-            viewModel.onPhotoCaptureError(
-                "Errore durante la preparazione della fotocamera."
-            )
+            viewModel.onPhotoCaptureError("Errore durante la preparazione della fotocamera.")
         }
     }
 
     ParkingContent(
         uiState = uiState,
         parkingNotificationsEnabled = parkingNotificationsEnabled,
+        onRequestExactAlarmPermission = viewModel::onRequestExactAlarmPermission,
         onVehicleSelected = viewModel::onVehicleSelected,
         onParkingTypeSelected = viewModel::onParkingTypeSelected,
         onHourlyRateChanged = viewModel::onHourlyRateChanged,
         onFixedCostChanged = viewModel::onFixedCostChanged,
         onExpiryMinutesChanged = viewModel::onExpiryMinutesChanged,
+        onWarningMinutesChanged = viewModel::onWarningMinutesChanged,
         onLatitudeChanged = viewModel::onLatitudeChanged,
         onLongitudeChanged = viewModel::onLongitudeChanged,
         onSavedLocationSelected = viewModel::onSavedLocationSelected,
@@ -191,9 +227,7 @@ fun ParkingScreen(
                     onLocationError = viewModel::onLocationError
                 )
             } else {
-                locationPermissionLauncher.launch(
-                    Manifest.permission.ACCESS_FINE_LOCATION
-                )
+                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
             }
         },
         onTakePhotoClicked = ::startPhotoCapture,
@@ -216,11 +250,13 @@ fun ParkingScreen(
 private fun ParkingContent(
     uiState: ParkingUiState,
     parkingNotificationsEnabled: Boolean,
+    onRequestExactAlarmPermission: () -> Unit,
     onVehicleSelected: (Int) -> Unit,
     onParkingTypeSelected: (ParkingType) -> Unit,
     onHourlyRateChanged: (String) -> Unit,
     onFixedCostChanged: (String) -> Unit,
     onExpiryMinutesChanged: (String) -> Unit,
+    onWarningMinutesChanged: (Int) -> Unit,
     onLatitudeChanged: (String) -> Unit,
     onLongitudeChanged: (String) -> Unit,
     onSavedLocationSelected: (Int?) -> Unit,
@@ -255,12 +291,8 @@ private fun ParkingContent(
             ParkingType.values().forEach { type ->
                 FilterChip(
                     selected = uiState.selectedType == type,
-                    onClick = {
-                        onParkingTypeSelected(type)
-                    },
-                    label = {
-                        Text(text = type.label)
-                    }
+                    onClick = { onParkingTypeSelected(type) },
+                    label = { Text(text = type.label) }
                 )
             }
         }
@@ -272,15 +304,9 @@ private fun ParkingContent(
                 OutlinedTextField(
                     value = uiState.hourlyRate,
                     onValueChange = onHourlyRateChanged,
-                    label = {
-                        Text(text = "Tariffa oraria")
-                    },
-                    supportingText = {
-                        Text(text = "Esempio: 1.50")
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal
-                    ),
+                    label = { Text(text = "Tariffa oraria") },
+                    supportingText = { Text(text = "Esempio: 1.50") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -289,32 +315,55 @@ private fun ParkingContent(
                 OutlinedTextField(
                     value = uiState.fixedCost,
                     onValueChange = onFixedCostChanged,
-                    label = {
-                        Text(text = "Costo fisso")
-                    },
-                    supportingText = {
-                        Text(text = "Esempio: 3.00")
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal
-                    ),
+                    label = { Text(text = "Costo fisso") },
+                    supportingText = { Text(text = "Esempio: 3.00") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 OutlinedTextField(
                     value = uiState.expiryMinutes,
                     onValueChange = onExpiryMinutesChanged,
-                    label = {
-                        Text(text = "Durata ticket in minuti")
-                    },
-                    supportingText = {
-                        Text(text = "Esempio: 120")
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number
-                    ),
+                    label = { Text(text = "Durata ticket in minuti") },
+                    supportingText = { Text(text = "Esempio: 120") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Text(text = "Preavviso di scadenza")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(5, 10, 15, 30).forEach { minutes ->
+                        FilterChip(
+                            selected = uiState.warningMinutes == minutes,
+                            onClick = { onWarningMinutesChanged(minutes) },
+                            label = { Text(text = "$minutes min prima") }
+                        )
+                    }
+                }
+            }
+        }
+
+        if (!uiState.canScheduleExactAlarms && uiState.selectedType == ParkingType.FIXED) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(text = "Permesso allarmi esatti disattivato")
+                    Text(text = "Per ricevere la notifica di scadenza al secondo esatto, abilita il permesso 'Allarmi e promemoria' nelle impostazioni.")
+                    Button(
+                        onClick = onRequestExactAlarmPermission,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = "Apri Impostazioni Permesso")
+                    }
+                }
             }
         }
 
@@ -345,30 +394,18 @@ private fun ParkingContent(
         OutlinedTextField(
             value = uiState.latitude,
             onValueChange = onLatitudeChanged,
-            label = {
-                Text(text = "Latitudine")
-            },
-            supportingText = {
-                Text(text = "Compilata da luogo salvato, GPS, mappa o a mano")
-            },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Decimal
-            ),
+            label = { Text(text = "Latitudine") },
+            supportingText = { Text(text = "Compilata da luogo salvato, GPS, mappa o a mano") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth()
         )
 
         OutlinedTextField(
             value = uiState.longitude,
             onValueChange = onLongitudeChanged,
-            label = {
-                Text(text = "Longitudine")
-            },
-            supportingText = {
-                Text(text = "Compilata da luogo salvato, GPS, mappa o a mano")
-            },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Decimal
-            ),
+            label = { Text(text = "Longitudine") },
+            supportingText = { Text(text = "Compilata da luogo salvato, GPS, mappa o a mano") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -381,20 +418,13 @@ private fun ParkingContent(
         OutlinedTextField(
             value = uiState.note,
             onValueChange = onNoteChanged,
-            label = {
-                Text(text = "Nota")
-            },
+            label = { Text(text = "Nota") },
             minLines = 3,
             modifier = Modifier.fillMaxWidth()
         )
 
-        uiState.errorMessage?.let { message ->
-            Text(text = message)
-        }
-
-        uiState.successMessage?.let { message ->
-            Text(text = message)
-        }
+        uiState.errorMessage?.let { message -> Text(text = message) }
+        uiState.successMessage?.let { message -> Text(text = message) }
 
         NotificationReminderSection(
             notificationsEnabled = parkingNotificationsEnabled,
@@ -426,23 +456,15 @@ private fun NotificationReminderSection(
     activeParkings: List<ParkingSession>,
     onEnableNotificationsClicked: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(text = "Notifiche parcheggio")
-            Text(
-                text = if (notificationsEnabled) {
-                    "Stato: attive"
-                } else {
-                    "Stato: non attive"
-                }
-            )
-            Text(text = "Reminder parcheggio attivo: notifica subito e poi ogni 15 minuti.")
-            Text(text = "Ticket in scadenza: avviso quando mancano 5 minuti e alla scadenza.")
+            Text(text = if (notificationsEnabled) "Stato: attive" else "Stato: non attive")
+            Text(text = "Reminder parcheggio attivo: notifica subito e poi ogni 15 minuti tramite WorkManager.")
+            Text(text = "Ticket in scadenza: avviso esatto tramite AlarmManager.")
             Text(text = "Parcheggi monitorati: ${activeParkings.size}")
 
             if (!notificationsEnabled) {
@@ -463,9 +485,7 @@ private fun ParkingPhotoSection(
     onTakePhotoClicked: () -> Unit,
     onRemovePhotoClicked: () -> Unit
 ) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(text = "Foto parcheggio")
 
         Button(
@@ -489,25 +509,23 @@ private fun ParkingPhotoSection(
 }
 
 @Composable
-private fun ParkingPhotoPreview(
-    photoPath: String
-) {
-    val imageBitmap = remember(photoPath) {
-        BitmapFactory.decodeFile(photoPath)?.asImageBitmap()
+private fun ParkingPhotoPreview(photoPath: String) {
+    val bitmap by produceState<Bitmap?>(initialValue = null, photoPath) {
+        value = withContext(Dispatchers.IO) {
+            BitmapFactory.decodeFile(photoPath)
+        }
     }
 
-    if (imageBitmap != null) {
+    bitmap?.let { loadedBitmap ->
         Image(
-            bitmap = imageBitmap,
+            bitmap = loadedBitmap.asImageBitmap(),
             contentDescription = "Foto parcheggio",
             modifier = Modifier
                 .fillMaxWidth()
                 .height(180.dp),
             contentScale = ContentScale.Crop
         )
-    } else {
-        Text(text = "Anteprima foto non disponibile.")
-    }
+    } ?: Text(text = "Caricamento anteprima foto...")
 }
 
 @Composable
@@ -516,17 +534,10 @@ private fun SavedLocationSelector(
     selectedSavedLocationId: Int?,
     onSavedLocationSelected: (Int?) -> Unit
 ) {
-    var menuExpanded by remember {
-        mutableStateOf(false)
-    }
+    var menuExpanded by remember { mutableStateOf(false) }
+    val selectedLocation = savedLocations.firstOrNull { it.id == selectedSavedLocationId }
 
-    val selectedLocation = savedLocations.firstOrNull { location ->
-        location.id == selectedSavedLocationId
-    }
-
-    Column(
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(text = "Luogo salvato")
 
         if (savedLocations.isEmpty()) {
@@ -534,27 +545,18 @@ private fun SavedLocationSelector(
         } else {
             Box {
                 OutlinedButton(
-                    onClick = {
-                        menuExpanded = true
-                    },
+                    onClick = { menuExpanded = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = selectedLocation?.name
-                            ?: "Seleziona un luogo salvato"
-                    )
+                    Text(text = selectedLocation?.name ?: "Seleziona un luogo salvato")
                 }
 
                 DropdownMenu(
                     expanded = menuExpanded,
-                    onDismissRequest = {
-                        menuExpanded = false
-                    }
+                    onDismissRequest = { menuExpanded = false }
                 ) {
                     DropdownMenuItem(
-                        text = {
-                            Text(text = "Nessun luogo salvato")
-                        },
+                        text = { Text(text = "Nessun luogo salvato") },
                         onClick = {
                             onSavedLocationSelected(null)
                             menuExpanded = false
@@ -563,11 +565,7 @@ private fun SavedLocationSelector(
 
                     savedLocations.forEach { location ->
                         DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = "${location.name} (${location.latitude}, ${location.longitude})"
-                                )
-                            },
+                            text = { Text(text = "${location.name} (${location.latitude}, ${location.longitude})") },
                             onClick = {
                                 onSavedLocationSelected(location.id)
                                 menuExpanded = false
@@ -586,26 +584,14 @@ private fun ParkingPositionPickerMap(
     longitude: String,
     onPositionSelected: (LatLng) -> Unit
 ) {
-    val defaultPosition = LatLng(
-        44.4949,
-        11.3426
-    )
-
-    val selectedPosition = parseLatLng(
-        latitude = latitude,
-        longitude = longitude
-    )
+    val defaultPosition = LatLng(44.4949, 11.3426)
+    val selectedPosition = parseLatLng(latitude = latitude, longitude = longitude)
 
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(
-            selectedPosition ?: defaultPosition,
-            14f
-        )
+        position = CameraPosition.fromLatLngZoom(selectedPosition ?: defaultPosition, 14f)
     }
 
-    Column(
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(text = "Tocca la mappa per scegliere il punto del parcheggio")
 
         GoogleMap(
@@ -613,10 +599,7 @@ private fun ParkingPositionPickerMap(
                 .fillMaxWidth()
                 .height(260.dp),
             cameraPositionState = cameraPositionState,
-            uiSettings = MapUiSettings(
-                zoomControlsEnabled = true,
-                myLocationButtonEnabled = false
-            ),
+            uiSettings = MapUiSettings(zoomControlsEnabled = true, myLocationButtonEnabled = false),
             onMapClick = onPositionSelected
         ) {
             selectedPosition?.let { position ->
@@ -634,49 +617,27 @@ private fun VehicleSelector(
     uiState: ParkingUiState,
     onVehicleSelected: (Int) -> Unit
 ) {
-    var menuExpanded by remember {
-        mutableStateOf(false)
-    }
+    var menuExpanded by remember { mutableStateOf(false) }
+    val selectedVehicle = uiState.vehicles.firstOrNull { it.id == uiState.selectedVehicleId }
 
-    val selectedVehicle = uiState.vehicles.firstOrNull { vehicle ->
-        vehicle.id == uiState.selectedVehicleId
-    }
-
-    Column(
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(text = "Veicolo")
 
         if (uiState.vehicles.isEmpty()) {
-            Text(
-                text = "Non ci sono veicoli disponibili. Aggiungi prima un veicolo dalla schermata dedicata."
-            )
+            Text(text = "Non ci sono veicoli disponibili. Aggiungi prima un veicolo dalla schermata dedicata.")
         } else {
             Box {
-                OutlinedButton(
-                    onClick = {
-                        menuExpanded = true
-                    }
-                ) {
-                    Text(
-                        text = selectedVehicle?.name
-                            ?: "Seleziona un veicolo"
-                    )
+                OutlinedButton(onClick = { menuExpanded = true }) {
+                    Text(text = selectedVehicle?.name ?: "Seleziona un veicolo")
                 }
 
                 DropdownMenu(
                     expanded = menuExpanded,
-                    onDismissRequest = {
-                        menuExpanded = false
-                    }
+                    onDismissRequest = { menuExpanded = false }
                 ) {
                     uiState.vehicles.forEach { vehicle ->
                         DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = "${vehicle.name} (${vehicle.type})"
-                                )
-                            },
+                            text = { Text(text = "${vehicle.name} (${vehicle.type})") },
                             onClick = {
                                 onVehicleSelected(vehicle.id)
                                 menuExpanded = false
@@ -694,9 +655,7 @@ private fun ActiveParkingsSection(
     uiState: ParkingUiState,
     onEndParkingClicked: (ParkingSession) -> Unit
 ) {
-    var nowMillis by remember {
-        mutableLongStateOf(System.currentTimeMillis())
-    }
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -710,15 +669,11 @@ private fun ActiveParkingsSection(
     if (uiState.activeParkings.isEmpty()) {
         Text(text = "Nessun parcheggio attivo.")
     } else {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             uiState.activeParkings.forEach { session ->
                 ActiveParkingItem(
                     session = session,
-                    vehicleName = uiState.vehicles.firstOrNull { vehicle ->
-                        vehicle.id == session.vehicleId
-                    }?.name ?: "Veicolo sconosciuto",
+                    vehicleName = uiState.vehicles.firstOrNull { it.id == session.vehicleId }?.name ?: "Veicolo sconosciuto",
                     nowMillis = nowMillis,
                     onEndParkingClicked = onEndParkingClicked
                 )
@@ -735,56 +690,35 @@ private fun ActiveParkingItem(
     onEndParkingClicked: (ParkingSession) -> Unit
 ) {
     val elapsedMillis = (nowMillis - session.startTime).coerceAtLeast(0L)
-    val liveCost = calculateLiveCost(
-        session = session,
-        elapsedMillis = elapsedMillis
-    )
+    val liveCost = ParkingFormatters.calculateLiveCost(session = session, elapsedMillis = elapsedMillis)
 
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(text = vehicleName)
-            Text(text = "Tipo: ${formatParkingType(session.type)}")
-            Text(text = "Inizio: ${formatTime(session.startTime)}")
-            Text(text = "Tempo trascorso: ${formatDuration(elapsedMillis)}")
-            Text(text = "Costo attuale: ${formatCurrency(liveCost)}")
+            Text(text = "Tipo: ${ParkingFormatters.formatParkingType(session.type)}")
+            Text(text = "Inizio: ${ParkingFormatters.formatTime(session.startTime, "dd/MM/yyyy HH:mm")}")
+            Text(text = "Tempo trascorso: ${ParkingFormatters.formatDuration(elapsedMillis)}")
+            Text(text = "Costo attuale: ${ParkingFormatters.formatCurrency(liveCost)}")
             Text(text = "Posizione: ${session.latitude}, ${session.longitude}")
 
-            session.savedLocationName?.let { savedLocationName ->
-                Text(text = "Luogo: $savedLocationName")
-            }
-
-            session.photoPath?.let {
-                ParkingPhotoPreview(photoPath = it)
-            }
-
-            session.hourlyRate?.let { hourlyRate ->
-                Text(text = "Tariffa: ${formatCurrency(hourlyRate)} / ora")
-            }
-
-            session.fixedCost?.let { fixedCost ->
-                Text(text = "Costo fisso: ${formatCurrency(fixedCost)}")
-            }
+            session.savedLocationName?.let { Text(text = "Luogo: $it") }
+            session.photoPath?.let { ParkingPhotoPreview(photoPath = it) }
+            session.hourlyRate?.let { Text(text = "Tariffa: ${ParkingFormatters.formatCurrency(it)} / ora") }
+            session.fixedCost?.let { Text(text = "Costo fisso: ${ParkingFormatters.formatCurrency(it)}") }
 
             session.expiryTime?.let { expiryTime ->
-                Text(text = "Scadenza: ${formatTime(expiryTime)}")
-                Text(
-                    text = "Countdown ticket: ${formatTicketCountdown(expiryTime - nowMillis)}"
-                )
+                Text(text = "Scadenza: ${ParkingFormatters.formatTime(expiryTime, "dd/MM/yyyy HH:mm")}")
+                Text(text = "Countdown ticket: ${formatTicketCountdown(expiryTime - nowMillis)}")
+                Text(text = "Preavviso configurato: ${session.warningMinutes} min prima")
             }
 
-            session.note?.let { note ->
-                Text(text = "Nota: $note")
-            }
+            session.note?.let { Text(text = "Nota: $it") }
 
             Button(
-                onClick = {
-                    onEndParkingClicked(session)
-                },
+                onClick = { onEndParkingClicked(session) },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(text = "Termina parcheggio")
@@ -793,141 +727,33 @@ private fun ActiveParkingItem(
     }
 }
 
-private fun formatParkingType(
-    type: String
-): String {
-    return when (type) {
-        "free" -> "Gratuito"
-        "hourly" -> "A ore"
-        "fixed" -> "Ticket fisso"
-        else -> type
-    }
-}
-
-private fun calculateLiveCost(
-    session: ParkingSession,
-    elapsedMillis: Long
-): Double {
-    return when (session.type) {
-        "hourly" -> {
-            val hourlyRate = session.hourlyRate ?: 0.0
-            hourlyRate * elapsedMillis.toDouble() / MILLIS_PER_HOUR
-        }
-        "fixed" -> session.fixedCost ?: 0.0
-        else -> 0.0
-    }
-}
-
-private fun formatCurrency(
-    value: Double
-): String {
-    return String.format(
-        Locale.getDefault(),
-        "%.2f euro",
-        value
-    )
-}
-
-private fun formatDuration(
-    durationMillis: Long
-): String {
-    val totalSeconds = durationMillis / MILLIS_PER_SECOND
-    val hours = totalSeconds / SECONDS_PER_HOUR
-    val minutes = (totalSeconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE
-    val seconds = totalSeconds % SECONDS_PER_MINUTE
-
-    return if (hours > 0) {
-        String.format(
-            Locale.getDefault(),
-            "%02d:%02d:%02d",
-            hours,
-            minutes,
-            seconds
-        )
-    } else {
-        String.format(
-            Locale.getDefault(),
-            "%02d:%02d",
-            minutes,
-            seconds
-        )
-    }
-}
-
-private fun formatTicketCountdown(
-    remainingMillis: Long
-): String {
+private fun formatTicketCountdown(remainingMillis: Long): String {
     return if (remainingMillis <= 0L) {
-        "Scaduto da ${formatDuration(-remainingMillis)}"
+        "Scaduto da ${ParkingFormatters.formatDuration(-remainingMillis)}"
     } else {
-        formatDuration(remainingMillis)
+        ParkingFormatters.formatDuration(remainingMillis)
     }
 }
 
-private fun formatTime(
-    timestamp: Long
-): String {
-    val formatter = SimpleDateFormat(
-        "dd/MM/yyyy HH:mm",
-        Locale.getDefault()
-    )
-
-    return formatter.format(Date(timestamp))
-}
-
-private fun parseLatLng(
-    latitude: String,
-    longitude: String
-): LatLng? {
+private fun parseLatLng(latitude: String, longitude: String): LatLng? {
     val parsedLatitude = latitude.replace(',', '.').toDoubleOrNull()
     val parsedLongitude = longitude.replace(',', '.').toDoubleOrNull()
-
-    if (parsedLatitude == null || parsedLongitude == null) {
-        return null
-    }
-
-    if (parsedLatitude !in -90.0..90.0 || parsedLongitude !in -180.0..180.0) {
-        return null
-    }
-
-    return LatLng(
-        parsedLatitude,
-        parsedLongitude
-    )
+    if (parsedLatitude == null || parsedLongitude == null) return null
+    if (parsedLatitude !in -90.0..90.0 || parsedLongitude !in -180.0..180.0) return null
+    return LatLng(parsedLatitude, parsedLongitude)
 }
 
-private fun hasFineLocationPermission(
-    context: Context
-): Boolean {
-    return ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.ACCESS_FINE_LOCATION
-    ) == PackageManager.PERMISSION_GRANTED
+private fun hasFineLocationPermission(context: Context): Boolean {
+    return ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 }
 
-private fun hasCameraPermission(
-    context: Context
-): Boolean {
-    return ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.CAMERA
-    ) == PackageManager.PERMISSION_GRANTED
+private fun hasCameraPermission(context: Context): Boolean {
+    return ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 }
 
-private fun createParkingPhotoFile(
-    context: Context
-): File {
-    val photoDirectory = File(
-        context.filesDir,
-        "parking_photos"
-    ).apply {
-        mkdirs()
-    }
-
-    return File(
-        photoDirectory,
-        "parking_${System.currentTimeMillis()}.jpg"
-    )
+private fun createParkingPhotoFile(context: Context): File {
+    val photoDirectory = File(context.filesDir, "parking_photos").apply { mkdirs() }
+    return File(photoDirectory, "parking_${System.currentTimeMillis()}.jpg")
 }
 
 @SuppressLint("MissingPermission")
@@ -936,9 +762,7 @@ private fun fetchCurrentLocation(
     onLocationLoaded: (Double, Double) -> Unit,
     onLocationError: (String) -> Unit
 ) {
-    val fusedLocationClient =
-        LocationServices.getFusedLocationProviderClient(context)
-
+    val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
     val cancellationTokenSource = CancellationTokenSource()
 
     fusedLocationClient.getCurrentLocation(
@@ -946,23 +770,11 @@ private fun fetchCurrentLocation(
         cancellationTokenSource.token
     ).addOnSuccessListener { location ->
         if (location != null) {
-            onLocationLoaded(
-                location.latitude,
-                location.longitude
-            )
+            onLocationLoaded(location.latitude, location.longitude)
         } else {
-            onLocationError(
-                "Posizione non disponibile. Controlla GPS/emulatore."
-            )
+            onLocationError("Posizione non disponibile. Controlla GPS/emulatore.")
         }
     }.addOnFailureListener {
-        onLocationError(
-            "Errore durante il recupero della posizione."
-        )
+        onLocationError("Errore durante il recupero della posizione.")
     }
 }
-
-private const val MILLIS_PER_SECOND = 1_000L
-private const val SECONDS_PER_MINUTE = 60L
-private const val SECONDS_PER_HOUR = 3_600L
-private const val MILLIS_PER_HOUR = 3_600_000.0

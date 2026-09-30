@@ -10,12 +10,14 @@ import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.parkmatee.GeofenceIntentAction
 
 data class BottomNavItem(
     val route: String,
@@ -24,8 +26,37 @@ data class BottomNavItem(
 )
 
 @Composable
-fun MainScreen() {
+fun MainScreen(
+    pendingGeofenceAction: GeofenceIntentAction? = null,
+    onActionConsumed: () -> Unit = {}
+) {
     val navController = rememberNavController()
+
+    // Intercetta l'azione pendente ed esegue la navigazione ONE-SHOT senza restoreState
+    LaunchedEffect(pendingGeofenceAction) {
+        if (pendingGeofenceAction != null) {
+            val targetRoute = when (pendingGeofenceAction) {
+                is GeofenceIntentAction.StartParking -> {
+                    "${Routes.PARKING}?savedLocationId=${pendingGeofenceAction.savedLocationId}&autoStart=true"
+                }
+                is GeofenceIntentAction.EndParking -> {
+                    "${Routes.PARKING}?savedLocationId=${pendingGeofenceAction.savedLocationId}&autoEnd=true"
+                }
+                is GeofenceIntentAction.OpenLocation -> {
+                    "${Routes.SAVED_LOCATIONS}?savedLocationId=${pendingGeofenceAction.savedLocationId}"
+                }
+            }
+
+            // Navigazione one-shot: NIENTE saveState / restoreState per garantire la ri-creazione
+            // con i nuovi argomenti passati nella query string.
+            navController.navigate(targetRoute) {
+                launchSingleTop = true
+            }
+
+            // Segnala a MainActivity che l'azione è stata consumata
+            onActionConsumed()
+        }
+    }
 
     Scaffold(
         bottomBar = { BottomNavBar(navController = navController) }
@@ -45,23 +76,29 @@ fun BottomNavBar(navController: NavHostController) {
         BottomNavItem(Routes.SAVED_LOCATIONS, "Luoghi", Icons.Default.Place),
         BottomNavItem(Routes.MAP, "Mappa", Icons.Default.Map),
         BottomNavItem(Routes.HISTORY, "Storico", Icons.Default.History),
-        BottomNavItem(Routes.STATS, "Stats", Icons.Default.BarChart),
+        BottomNavItem(Routes.STATS, "Stats", Icons.Default.BarChart)
     )
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
+    // Estraiamo la rotta base ignorando gli eventuali parametri di query (?savedLocationId=...)
+    val baseRoute = navBackStackEntry?.destination?.route?.substringBefore("?")
 
     NavigationBar {
         items.forEach { item ->
+            val isSelected = baseRoute == item.route
+
             NavigationBarItem(
-                selected = currentRoute == item.route,
+                selected = isSelected,
                 onClick = {
-                    navController.navigate(item.route) {
-                        popUpTo(navController.graph.startDestinationId) {
-                            saveState = true
+                    if (!isSelected) {
+                        // Conservazione dello stato corretta per il cambio tab standard
+                        navController.navigate(item.route) {
+                            popUpTo(navController.graph.startDestinationId) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
                         }
-                        launchSingleTop = true
-                        restoreState = true
                     }
                 },
                 icon = { Icon(item.icon, contentDescription = item.label) },

@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.parkmatee.MainActivity
@@ -35,31 +36,45 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val triggeredLocationName = geofencingEvent.triggeringGeofences
-                    ?.firstOrNull()
-                    ?.requestId
-                    ?.toSavedLocationName()
-                    ?: "luogo salvato"
+                val triggeringGeofences = geofencingEvent.triggeringGeofences
+                if (!triggeringGeofences.isNullOrEmpty()) {
+                    val transition = geofencingEvent.geofenceTransition
 
-                val hasActiveParking = hasActiveParkingForSavedLocation(
-                    context = context,
-                    savedLocationName = triggeredLocationName
-                )
+                    for (triggeringGeofence in triggeringGeofences) {
+                        val requestId = triggeringGeofence.requestId ?: continue
 
-                val transition = geofencingEvent.geofenceTransition
-                val notificationContent = buildGeofenceNotificationContent(
-                    locationName = triggeredLocationName,
-                    transition = transition,
-                    hasActiveParking = hasActiveParking
-                )
+                        // Estrazione centralizzata tramite SavedLocationGeofenceRequestId
+                        val savedLocationId = SavedLocationGeofenceRequestId.decodeId(requestId)
+                        val triggeredLocationName = SavedLocationGeofenceRequestId.decodeName(requestId)
 
-                showGeofenceNotification(
-                    context = context,
-                    title = notificationContent.title,
-                    text = notificationContent.text,
-                    actionLabel = notificationContent.actionLabel,
-                    notificationId = createUniqueNotificationId()
-                )
+                        if (savedLocationId != null) {
+                            try {
+                                val hasActiveParking = hasActiveParkingForSavedLocation(
+                                    context = context,
+                                    savedLocationName = triggeredLocationName
+                                )
+
+                                val notificationContent = buildGeofenceNotificationContent(
+                                    locationName = triggeredLocationName,
+                                    transition = transition,
+                                    hasActiveParking = hasActiveParking
+                                )
+
+                                showGeofenceNotification(
+                                    context = context,
+                                    title = notificationContent.title,
+                                    text = notificationContent.text,
+                                    actionLabel = notificationContent.actionLabel,
+                                    actionType = notificationContent.actionType,
+                                    notificationId = savedLocationId,
+                                    savedLocationId = savedLocationId
+                                )
+                            } catch (dbException: Exception) {
+                                Log.e(TAG, "Errore durante il recupero dello stato del parcheggio per geofence", dbException)
+                            }
+                        }
+                    }
+                }
             } finally {
                 pendingResult.finish()
             }
@@ -75,24 +90,15 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
             .getActiveSessionForSavedLocation(savedLocationName) != null
     }
 
-    private fun String.toSavedLocationName(): String? {
-        if (!startsWith(SAVED_LOCATION_REQUEST_ID_PREFIX)) {
-            return null
-        }
-
-        return substringAfter(SAVED_LOCATION_REQUEST_ID_PREFIX)
-            .substringAfter("_", "luogo salvato")
-            .ifBlank { "luogo salvato" }
-    }
-
     companion object {
-        private const val SAVED_LOCATION_REQUEST_ID_PREFIX = "saved_location_"
+        private const val TAG = "GeofenceBroadcastReceiver"
         private const val GEOFENCE_NOTIFICATION_CHANNEL_ID = "parking_geofence"
         private const val GEOFENCE_NOTIFICATION_CONTENT_REQUEST_CODE = 50_001
         private const val GEOFENCE_NOTIFICATION_ACTION_REQUEST_CODE = 50_002
 
         fun showSavedLocationStatusNotification(
             context: Context,
+            savedLocationId: Int,
             locationName: String,
             isInside: Boolean,
             distanceMeters: Float,
@@ -111,8 +117,9 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
                 title = notificationContent.title,
                 text = notificationContent.text,
                 actionLabel = notificationContent.actionLabel,
-                notificationId = createUniqueNotificationId(),
-                requestCode = createUniqueNotificationId()
+                actionType = notificationContent.actionType,
+                notificationId = savedLocationId,
+                savedLocationId = savedLocationId
             )
         }
 
@@ -127,13 +134,15 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
                         GeofenceNotificationContent(
                             title = "Parcheggio gia attivo in $locationName",
                             text = "Sei dentro il raggio del luogo salvato e il parcheggio e gia attivo.",
-                            actionLabel = "Apri ParkMate"
+                            actionLabel = "Apri ParkMate",
+                            actionType = null
                         )
                     } else {
                         GeofenceNotificationContent(
                             title = "Sei dentro il raggio di $locationName",
                             text = "Vuoi avviare un parcheggio in questo luogo salvato?",
-                            actionLabel = "Avvia parcheggio"
+                            actionLabel = "Avvia parcheggio",
+                            actionType = "ACTION_START_PARKING"
                         )
                     }
                 }
@@ -143,13 +152,15 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
                         GeofenceNotificationContent(
                             title = "Ti sei allontanato da $locationName",
                             text = "Vuoi terminare il parcheggio collegato a questo luogo?",
-                            actionLabel = "Termina parcheggio"
+                            actionLabel = "Termina parcheggio",
+                            actionType = "ACTION_END_PARKING"
                         )
                     } else {
                         GeofenceNotificationContent(
                             title = "Sei fuori dal raggio di $locationName",
                             text = "Non risultano parcheggi attivi collegati a questo luogo.",
-                            actionLabel = "Apri ParkMate"
+                            actionLabel = "Apri ParkMate",
+                            actionType = null
                         )
                     }
                 }
@@ -157,7 +168,8 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
                 else -> GeofenceNotificationContent(
                     title = "Promemoria parcheggio",
                     text = "Controlla lo stato del parcheggio.",
-                    actionLabel = "Apri ParkMate"
+                    actionLabel = "Apri ParkMate",
+                    actionType = null
                 )
             }
         }
@@ -172,28 +184,32 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
                 if (hasActiveParking) {
                     GeofenceNotificationContent(
                         title = "Parcheggio gia attivo in $locationName",
-                        text = "Distanza: ${distanceMeters} m. Sei gia parcheggiato in questo luogo.",
-                        actionLabel = "Apri ParkMate"
+                        text = "Distanza: $distanceMeters m. Sei gia parcheggiato in questo luogo.",
+                        actionLabel = "Apri ParkMate",
+                        actionType = null
                     )
                 } else {
                     GeofenceNotificationContent(
                         title = "Sei dentro il raggio di $locationName",
-                        text = "Distanza: ${distanceMeters} m. Vuoi avviare un parcheggio?",
-                        actionLabel = "Avvia parcheggio"
+                        text = "Distanza: $distanceMeters m. Vuoi avviare un parcheggio?",
+                        actionLabel = "Avvia parcheggio",
+                        actionType = "ACTION_START_PARKING"
                     )
                 }
             } else {
                 if (hasActiveParking) {
                     GeofenceNotificationContent(
                         title = "Ti sei allontanato da $locationName",
-                        text = "Distanza: ${distanceMeters} m. Vuoi terminare il parcheggio collegato?",
-                        actionLabel = "Termina parcheggio"
+                        text = "Distanza: $distanceMeters m. Vuoi terminare il parcheggio collegato?",
+                        actionLabel = "Termina parcheggio",
+                        actionType = "ACTION_END_PARKING"
                     )
                 } else {
                     GeofenceNotificationContent(
                         title = "Sei fuori dal raggio di $locationName",
-                        text = "Distanza: ${distanceMeters} m. Nessun parcheggio attivo collegato.",
-                        actionLabel = "Apri ParkMate"
+                        text = "Distanza: $distanceMeters m. Nessun parcheggio attivo collegato.",
+                        actionLabel = "Apri ParkMate",
+                        actionType = null
                     )
                 }
             }
@@ -204,8 +220,9 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
             title: String,
             text: String,
             actionLabel: String,
+            actionType: String?,
             notificationId: Int,
-            requestCode: Int = GEOFENCE_NOTIFICATION_CONTENT_REQUEST_CODE
+            savedLocationId: Int
         ) {
             if (!canShowNotifications(context)) {
                 return
@@ -215,12 +232,16 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
 
             val contentIntent = createOpenAppPendingIntent(
                 context = context,
-                requestCode = requestCode
+                requestCode = GEOFENCE_NOTIFICATION_CONTENT_REQUEST_CODE + notificationId,
+                savedLocationId = savedLocationId,
+                actionType = null
             )
 
             val actionIntent = createOpenAppPendingIntent(
                 context = context,
-                requestCode = GEOFENCE_NOTIFICATION_ACTION_REQUEST_CODE + notificationId
+                requestCode = GEOFENCE_NOTIFICATION_ACTION_REQUEST_CODE + notificationId,
+                savedLocationId = savedLocationId,
+                actionType = actionType
             )
 
             val notification = NotificationCompat.Builder(
@@ -244,36 +265,36 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
             val notificationManager =
                 context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-            notificationManager.notify(
-                notificationId,
-                notification
-            )
+            notificationManager.notify(notificationId, notification)
         }
 
         private fun createOpenAppPendingIntent(
             context: Context,
-            requestCode: Int
+            requestCode: Int,
+            savedLocationId: Int,
+            actionType: String?
         ): PendingIntent {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                putExtra("EXTRA_SAVED_LOCATION_ID", savedLocationId)
+                putExtra("EXTRA_GEOFENCE_ACTION", actionType)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
             return PendingIntent.getActivity(
                 context,
                 requestCode,
-                Intent(context, MainActivity::class.java),
+                intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-        }
-
-        private fun createUniqueNotificationId(): Int {
-            return (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
         }
 
         private fun canShowNotifications(
             context: Context
         ): Boolean {
             return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) == PackageManager.PERMISSION_GRANTED
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) == PackageManager.PERMISSION_GRANTED
         }
 
         private fun ensureGeofenceNotificationChannel(
@@ -302,5 +323,6 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
 private data class GeofenceNotificationContent(
     val title: String,
     val text: String,
-    val actionLabel: String
+    val actionLabel: String,
+    val actionType: String?
 )

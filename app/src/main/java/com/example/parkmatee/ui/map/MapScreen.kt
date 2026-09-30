@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,6 +28,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.example.parkmatee.data.entity.ParkingSession
+import com.example.parkmatee.util.ParkingFormatters
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -41,6 +44,7 @@ import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
+import kotlinx.coroutines.delay
 
 @Composable
 fun MapScreen(
@@ -93,76 +97,67 @@ private fun MapContent(
     hasLocationPermission: Boolean,
     onRequestCurrentLocation: () -> Unit
 ) {
-    val defaultPosition = LatLng(
-        44.4949,
-        11.3426
-    )
+    val defaultPosition = LatLng(44.4949, 11.3426)
 
     val firstParkingPosition = uiState.activeParkings.firstOrNull()?.let { session ->
-        LatLng(
-            session.latitude,
-            session.longitude
-        )
+        LatLng(session.latitude, session.longitude)
     }
 
     val firstSavedLocationPosition = uiState.savedLocations.firstOrNull()?.let { location ->
-        LatLng(
-            location.latitude,
-            location.longitude
-        )
+        LatLng(location.latitude, location.longitude)
     }
 
-    val userPosition =
-        if (
-            uiState.userLatitude != null &&
-            uiState.userLongitude != null
-        ) {
-            LatLng(
-                uiState.userLatitude,
-                uiState.userLongitude
-            )
-        } else {
-            null
-        }
+    val userPosition = if (uiState.userLatitude != null && uiState.userLongitude != null) {
+        LatLng(uiState.userLatitude, uiState.userLongitude)
+    } else {
+        null
+    }
 
-    val initialPosition =
-        userPosition
-            ?: firstParkingPosition
-            ?: firstSavedLocationPosition
-            ?: defaultPosition
+    val initialPosition = userPosition
+        ?: firstParkingPosition
+        ?: firstSavedLocationPosition
+        ?: defaultPosition
 
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(
-            initialPosition,
-            13f
-        )
+        position = CameraPosition.fromLatLngZoom(initialPosition, 13f)
     }
 
     var isMapLoaded by remember { mutableStateOf(false) }
 
+    // Ticker per aggiornare il tempo trascorso ed il costo live sui marker
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowMillis = System.currentTimeMillis()
+            delay(1_000L)
+        }
+    }
+
+    // Ricentraggio ottimizzato: scatta al caricamento della mappa E quando le liste smettono di essere vuote per la prima volta
     LaunchedEffect(
         isMapLoaded,
-        uiState.userLatitude,
-        uiState.userLongitude,
-        uiState.activeParkings,
-        uiState.savedLocations
+        uiState.activeParkings.isEmpty(),
+        uiState.savedLocations.isEmpty()
     ) {
-        if (!isMapLoaded) {
-            return@LaunchedEffect
-        }
+        if (!isMapLoaded) return@LaunchedEffect
 
-        val target =
-            userPosition
-                ?: firstParkingPosition
-                ?: firstSavedLocationPosition
-                ?: defaultPosition
+        val target = userPosition
+            ?: firstParkingPosition
+            ?: firstSavedLocationPosition
+            ?: defaultPosition
 
         cameraPositionState.animate(
-            CameraUpdateFactory.newLatLngZoom(
-                target,
-                15f
-            )
+            CameraUpdateFactory.newLatLngZoom(target, 15f)
         )
+    }
+
+    // Ricentraggio esplicito se l'utente carica/aggiorna le sue coordinate GPS
+    LaunchedEffect(uiState.userLatitude, uiState.userLongitude) {
+        if (isMapLoaded && userPosition != null) {
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(userPosition, 15f)
+            )
+        }
     }
 
     Column(
@@ -209,40 +204,25 @@ private fun MapContent(
             }
 
             uiState.savedLocations.forEach { location ->
-                val savedLocationPosition = LatLng(
-                    location.latitude,
-                    location.longitude
-                )
+                val savedLocationPosition = LatLng(location.latitude, location.longitude)
 
                 Circle(
                     center = savedLocationPosition,
                     radius = location.geofenceRadiusMeters.toDouble(),
                     strokeWidth = if (location.geofenceEnabled) 4f else 2f,
-                    strokeColor = if (location.geofenceEnabled) {
-                        Color(0xFF1976D2)
-                    } else {
-                        Color(0xFF9E9E9E)
-                    },
-                    fillColor = if (location.geofenceEnabled) {
-                        Color(0x331976D2)
-                    } else {
-                        Color(0x229E9E9E)
-                    }
+                    strokeColor = if (location.geofenceEnabled) Color(0xFF1976D2) else Color(0xFF9E9E9E),
+                    fillColor = if (location.geofenceEnabled) Color(0x331976D2) else Color(0x229E9E9E)
                 )
 
                 Marker(
-                    state = MarkerState(
-                        position = savedLocationPosition
-                    ),
+                    state = MarkerState(position = savedLocationPosition),
                     title = location.name,
                     snippet = if (location.geofenceEnabled) {
                         "Geofence attivo - raggio ${location.geofenceRadiusMeters.toInt()} m"
                     } else {
                         "Geofence non attivo - raggio ${location.geofenceRadiusMeters.toInt()} m"
                     },
-                    icon = BitmapDescriptorFactory.defaultMarker(
-                        BitmapDescriptorFactory.HUE_AZURE
-                    )
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)
                 )
             }
 
@@ -251,22 +231,23 @@ private fun MapContent(
                     vehicle.id == session.vehicleId
                 }?.name ?: "Veicolo"
 
+                val elapsedMillis = (nowMillis - session.startTime).coerceAtLeast(0L)
+                val liveCost = ParkingFormatters.calculateLiveCost(session, elapsedMillis)
+
+                val snippetText = "Tipo: ${ParkingFormatters.formatParkingType(session.type)} | " +
+                        "Inizio: ${ParkingFormatters.formatTime(session.startTime, "HH:mm")} | " +
+                        "Tempo: ${ParkingFormatters.formatDuration(elapsedMillis)} | " +
+                        "Costo: ${ParkingFormatters.formatCurrency(liveCost)}"
+
                 Marker(
-                    state = MarkerState(
-                        position = LatLng(
-                            session.latitude,
-                            session.longitude
-                        )
-                    ),
+                    state = MarkerState(position = LatLng(session.latitude, session.longitude)),
                     title = vehicleName,
-                    snippet = "Parcheggio attivo"
+                    snippet = snippetText
                 )
             }
         }
 
-        ActiveParkingMapSummary(
-            uiState = uiState
-        )
+        ActiveParkingMapSummary(uiState = uiState)
     }
 }
 
@@ -281,20 +262,11 @@ private fun ActiveParkingMapSummary(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(
-                text = "Parcheggi attivi: ${uiState.activeParkings.size}"
-            )
-            Text(
-                text = "Luoghi salvati: ${uiState.savedLocations.size}"
-            )
+            Text(text = "Parcheggi attivi: ${uiState.activeParkings.size}")
+            Text(text = "Luoghi salvati: ${uiState.savedLocations.size}")
 
-            val geofencedLocations = uiState.savedLocations.filter { location ->
-                location.geofenceEnabled
-            }
-
-            Text(
-                text = "Luoghi con geofence attivo: ${geofencedLocations.size}"
-            )
+            val geofencedLocations = uiState.savedLocations.filter { it.geofenceEnabled }
+            Text(text = "Luoghi con geofence attivo: ${geofencedLocations.size}")
 
             uiState.savedLocations.forEach { location ->
                 Text(
@@ -314,18 +286,14 @@ private fun ActiveParkingMapSummary(
                         vehicle.id == session.vehicleId
                     }?.name ?: "Veicolo sconosciuto"
 
-                    Text(
-                        text = "$vehicleName: ${session.latitude}, ${session.longitude}"
-                    )
+                    Text(text = "$vehicleName: ${session.latitude}, ${session.longitude}")
                 }
             }
         }
     }
 }
 
-private fun hasFineLocationPermission(
-    context: Context
-): Boolean {
+private fun hasFineLocationPermission(context: Context): Boolean {
     return ContextCompat.checkSelfPermission(
         context,
         Manifest.permission.ACCESS_FINE_LOCATION
@@ -338,9 +306,7 @@ private fun fetchCurrentLocation(
     onLocationLoaded: (Double, Double) -> Unit,
     onLocationError: (String) -> Unit
 ) {
-    val fusedLocationClient =
-        LocationServices.getFusedLocationProviderClient(context)
-
+    val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
     val cancellationTokenSource = CancellationTokenSource()
 
     fusedLocationClient.getCurrentLocation(
@@ -348,18 +314,11 @@ private fun fetchCurrentLocation(
         cancellationTokenSource.token
     ).addOnSuccessListener { location ->
         if (location != null) {
-            onLocationLoaded(
-                location.latitude,
-                location.longitude
-            )
+            onLocationLoaded(location.latitude, location.longitude)
         } else {
-            onLocationError(
-                "Posizione non disponibile. Controlla GPS/emulatore."
-            )
+            onLocationError("Posizione non disponibile. Controlla GPS/emulatore.")
         }
     }.addOnFailureListener {
-        onLocationError(
-            "Errore durante il recupero della posizione."
-        )
+        onLocationError("Errore durante il recupero della posizione.")
     }
 }

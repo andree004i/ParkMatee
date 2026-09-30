@@ -1,18 +1,70 @@
 package com.example.parkmatee
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import com.example.parkmatee.ui.MainScreen
 import com.example.parkmatee.ui.theme.ParkMateeTheme
 
+// Sealed class per tipizzare fortemente le azioni scatenate dalla notifica Geofence
+sealed class GeofenceIntentAction {
+    data class StartParking(val savedLocationId: Int) : GeofenceIntentAction()
+    data class EndParking(val savedLocationId: Int) : GeofenceIntentAction()
+    data class OpenLocation(val savedLocationId: Int) : GeofenceIntentAction()
+}
+
 class MainActivity : ComponentActivity() {
+
+    // Stato reattivo dell'Activity per catturare l'azione prima o durante il montaggio Compose
+    private val pendingGeofenceAction = mutableStateOf<GeofenceIntentAction?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Gestione dell'Intent in caso di Cold Start (app chiusa)
+        handleGeofenceIntent(intent)
+
         setContent {
             ParkMateeTheme {
-                MainScreen()
+                MainScreen(
+                    pendingGeofenceAction = pendingGeofenceAction.value,
+                    onActionConsumed = {
+                        // Consumato: resetta lo stato per evitare ri-trigger
+                        pendingGeofenceAction.value = null
+                    }
+                )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // Gestione dell'Intent se l'Activity era gia attiva in background/foreground
+        handleGeofenceIntent(intent)
+    }
+
+    private fun handleGeofenceIntent(intent: Intent?) {
+        if (intent == null) return
+
+        val savedLocationId = intent.getIntExtra("EXTRA_SAVED_LOCATION_ID", -1)
+        val geofenceAction = intent.getStringExtra("EXTRA_GEOFENCE_ACTION")
+
+        if (savedLocationId == -1) return
+
+        // Mappatura dell'azione richiesta
+        pendingGeofenceAction.value = when (geofenceAction) {
+            "ACTION_START_PARKING" -> GeofenceIntentAction.StartParking(savedLocationId)
+            "ACTION_END_PARKING" -> GeofenceIntentAction.EndParking(savedLocationId)
+            else -> GeofenceIntentAction.OpenLocation(savedLocationId)
+        }
+
+        // Rimozione degli extra per evitare la ri-esecuzione all'orizzontale/rotazione schermo
+        intent.removeExtra("EXTRA_SAVED_LOCATION_ID")
+        intent.removeExtra("EXTRA_GEOFENCE_ACTION")
     }
 }
