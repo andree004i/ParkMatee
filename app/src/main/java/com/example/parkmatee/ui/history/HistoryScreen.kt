@@ -172,7 +172,7 @@ private fun VehicleFilterDropdown(
                 vehicles.forEach { vehicle ->
                     DropdownMenuItem(
                         text = {
-                            Text(text = "${vehicle.name} (${vehicle.type})")
+                            Text(text = "${vehicle.name} (${vehicle.type.label})")
                         },
                         onClick = {
                             onVehicleFilterSelected(vehicle.id)

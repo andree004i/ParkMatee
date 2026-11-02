@@ -11,8 +11,11 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface VehicleDao {
 
-    @Query("SELECT * FROM vehicles")
+    @Query("SELECT * FROM vehicles ORDER BY name COLLATE NOCASE")
     fun getAllVehicles(): Flow<List<Vehicle>>
+
+    @Query("SELECT COUNT(*) FROM vehicles WHERE LOWER(name) = LOWER(:name) AND id != :excludeId")
+    suspend fun countByName(name: String, excludeId: Int): Int
 
     @Insert
     suspend fun insert(vehicle: Vehicle)

@@ -7,5 +7,5 @@ data class Vehicle(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
     val name: String,
-    val type: String
+    val type: VehicleType
 )

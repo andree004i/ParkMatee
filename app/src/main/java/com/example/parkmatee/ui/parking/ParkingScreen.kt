@@ -637,7 +637,7 @@ private fun VehicleSelector(
                 ) {
                     uiState.vehicles.forEach { vehicle ->
                         DropdownMenuItem(
-                            text = { Text(text = "${vehicle.name} (${vehicle.type})") },
+                            text = { Text(text = "${vehicle.name} (${vehicle.type.label})") },
                             onClick = {
                                 onVehicleSelected(vehicle.id)
                                 menuExpanded = false

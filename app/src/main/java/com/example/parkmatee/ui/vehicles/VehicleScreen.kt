@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
@@ -18,42 +19,57 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.parkmatee.data.entity.Vehicle
-
-private val vehicleTypes = listOf(
-    "car",
-    "motorcycle",
-    "bicycle"
-)
+import com.example.parkmatee.data.entity.VehicleType
 
 @Composable
 fun VehicleScreen(viewModel: VehicleViewModel) {
     val vehicles by viewModel.vehicles.collectAsState()
+    val deleteRequest by viewModel.deleteRequest.collectAsState()
+    val message by viewModel.message.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
-    var vehicleToEdit by remember { mutableStateOf<Vehicle?>(null) }
+    var vehicleToEdit by remember { mutableStateOf<VehicleWithStatus?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(message) {
+        message?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeMessage()
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddDialog = true }) {
                 Text("+")
             }
         }
     ) { padding ->
+        if (vehicles.isEmpty()) {
+            Text(
+                text = "Nessun veicolo. Tocca + per aggiungerne uno.",
+                modifier = Modifier.padding(padding).padding(16.dp)
+            )
+        }
         LazyColumn(modifier = Modifier.padding(padding)) {
-            items(vehicles) { vehicle ->
+            items(vehicles, key = { it.vehicle.id }) { item ->
                 VehicleItem(
-                    vehicle = vehicle,
+                    item = item,
                     onEdit = { vehicleToEdit = it },
-                    onDelete = { viewModel.deleteVehicle(it) }
+                    onDelete = { viewModel.onDeleteRequested(it) }
                 )
             }
         }
@@ -64,39 +80,61 @@ fun VehicleScreen(viewModel: VehicleViewModel) {
             title = "Aggiungi veicolo",
             confirmButtonText = "Aggiungi",
             initialName = "",
-            initialType = "car",
-            onConfirm = { name, type ->
-                viewModel.addVehicle(name, type)
-                showAddDialog = false
+            initialType = VehicleType.CAR,
+            typeEditable = true,
+            onConfirm = { name, type, onError ->
+                viewModel.saveVehicle(null, name, type) { error ->
+                    if (error == null) showAddDialog = false else onError(error)
+                }
             },
             onDismiss = { showAddDialog = false }
         )
     }
 
-    vehicleToEdit?.let { vehicle ->
+    vehicleToEdit?.let { item ->
         VehicleDialog(
             title = "Modifica veicolo",
             confirmButtonText = "Salva",
-            initialName = vehicle.name,
-            initialType = vehicle.type,
-            onConfirm = { name, type ->
-                viewModel.updateVehicle(
-                    vehicle = vehicle,
-                    name = name,
-                    type = type
-                )
-                vehicleToEdit = null
+            initialName = item.vehicle.name,
+            initialType = item.vehicle.type,
+            typeEditable = !item.isParked,
+            onConfirm = { name, type, onError ->
+                viewModel.saveVehicle(item.vehicle, name, type) { error ->
+                    if (error == null) vehicleToEdit = null else onError(error)
+                }
             },
             onDismiss = { vehicleToEdit = null }
+        )
+    }
+
+    deleteRequest?.let { request ->
+        AlertDialog(
+            onDismissRequest = viewModel::onDeleteDismissed,
+            title = { Text("Eliminare ${request.vehicle.name}?") },
+            text = {
+                Text(
+                    if (request.sessionCount > 0) {
+                        "Verranno eliminate definitivamente anche ${request.sessionCount} soste dalla cronologia e dalle statistiche."
+                    } else {
+                        "Il veicolo non ha soste registrate."
+                    }
+                )
+            },
+            confirmButton = {
+                Button(onClick = viewModel::onDeleteConfirmed) { Text("Elimina") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = viewModel::onDeleteDismissed) { Text("Annulla") }
+            }
         )
     }
 }
 
 @Composable
 fun VehicleItem(
-    vehicle: Vehicle,
-    onEdit: (Vehicle) -> Unit,
-    onDelete: (Vehicle) -> Unit
+    item: VehicleWithStatus,
+    onEdit: (VehicleWithStatus) -> Unit,
+    onDelete: (VehicleWithStatus) -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -107,14 +145,23 @@ fun VehicleItem(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column {
-                Text(
-                    text = vehicle.name,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = vehicle.type,
-                    style = MaterialTheme.typography.bodySmall
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        text = item.vehicle.name,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = item.vehicle.type.label,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                AssistChip(
+                    onClick = {},
+                    label = { Text(if (item.isParked) "Parcheggiato" else "Libero") }
                 )
             }
 
@@ -123,14 +170,14 @@ fun VehicleItem(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedButton(
-                    onClick = { onEdit(vehicle) },
+                    onClick = { onEdit(item) },
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Modifica")
                 }
 
-                Button(
-                    onClick = { onDelete(vehicle) },
+                OutlinedButton(
+                    onClick = { onDelete(item) },
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Elimina")
@@ -145,20 +192,14 @@ fun VehicleDialog(
     title: String,
     confirmButtonText: String,
     initialName: String,
-    initialType: String,
-    onConfirm: (String, String) -> Unit,
+    initialType: VehicleType,
+    typeEditable: Boolean,
+    onConfirm: (name: String, type: VehicleType, onError: (String) -> Unit) -> Unit,
     onDismiss: () -> Unit
 ) {
     var name by remember(initialName) { mutableStateOf(initialName) }
-    var type by remember(initialType) {
-        mutableStateOf(
-            if (initialType in vehicleTypes) {
-                initialType
-            } else {
-                "car"
-            }
-        )
-    }
+    var type by remember(initialType) { mutableStateOf(initialType) }
+    var error by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -167,8 +208,14 @@ fun VehicleDialog(
             Column {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = {
+                        name = it
+                        error = null
+                    },
                     label = { Text("Nome") },
+                    singleLine = true,
+                    isError = error != null,
+                    supportingText = error?.let { message -> { Text(message) } },
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -179,26 +226,26 @@ fun VehicleDialog(
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    vehicleTypes.forEach { vehicleType ->
+                    VehicleType.entries.forEach { vehicleType ->
                         FilterChip(
                             selected = type == vehicleType,
                             onClick = { type = vehicleType },
-                            label = { Text(vehicleType) }
+                            enabled = typeEditable,
+                            label = { Text(vehicleType.label) }
                         )
                     }
+                }
+
+                if (!typeEditable) {
+                    Text(
+                        text = "Il tipo non si puo cambiare mentre il veicolo e parcheggiato.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    val trimmedName = name.trim()
-
-                    if (trimmedName.isNotBlank()) {
-                        onConfirm(trimmedName, type)
-                    }
-                }
-            ) {
+            Button(onClick = { onConfirm(name, type) { message -> error = message } }) {
                 Text(confirmButtonText)
             }
         },
