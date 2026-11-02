@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.example.parkmatee.data.db.DatabaseProvider
+import com.example.parkmatee.appContainer
 
 class ParkingReminderWorker(
     context: Context,
@@ -19,8 +19,7 @@ class ParkingReminderWorker(
 
         // Se la sessione non esiste piu (es. veicolo eliminato) o e terminata,
         // il reminder si auto-cancella invece di notificare un parcheggio fantasma.
-        val session = DatabaseProvider.getDatabase(applicationContext)
-            .parkingDao()
+        val session = applicationContext.appContainer.parkingRepository
             .getParkingById(sessionId)
 
         if (session == null || session.endTime != null) {

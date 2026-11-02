@@ -3,9 +3,8 @@ package com.example.parkmatee.notification
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.example.parkmatee.data.db.DatabaseProvider
+import com.example.parkmatee.appContainer
 import com.example.parkmatee.data.entity.ParkingSession
-import com.example.parkmatee.data.repository.ParkingRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -17,10 +16,10 @@ class BootReceiver : BroadcastReceiver() {
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val db = DatabaseProvider.getDatabase(context)
-                    val repository = ParkingRepository(db.parkingDao())
-                    val alarmScheduler = ParkingAlarmScheduler(context)
-                    val workScheduler = ParkingWorkScheduler(context)
+                    val container = context.appContainer
+                    val repository = container.parkingRepository
+                    val alarmScheduler = container.alarmScheduler
+                    val workScheduler = container.workScheduler
 
                     val activeSessions: List<ParkingSession> = repository.getActiveParkings().first()
                     val now = System.currentTimeMillis()

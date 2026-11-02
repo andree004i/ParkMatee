@@ -9,6 +9,9 @@ class ParkingRepository(
     private val parkingDao: ParkingDao
 ) {
 
+    suspend fun getParkingById(id: Int): ParkingSession? =
+        parkingDao.getParkingById(id)
+
     fun getActiveParkings(): Flow<List<ParkingSession>> =
         parkingDao.getActiveParkings()
 

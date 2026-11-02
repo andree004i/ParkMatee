@@ -12,12 +12,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.parkmatee.data.db.DatabaseProvider
-import com.example.parkmatee.data.repository.ParkingRepository
-import com.example.parkmatee.data.repository.SavedLocationRepository
-import com.example.parkmatee.data.repository.VehicleRepository
-import com.example.parkmatee.notification.ParkingAlarmScheduler
-import com.example.parkmatee.notification.ParkingWorkScheduler
+import com.example.parkmatee.appContainer
 import com.example.parkmatee.ui.history.HistoryScreen
 import com.example.parkmatee.ui.history.HistoryViewModel
 import com.example.parkmatee.ui.map.MapScreen
@@ -47,39 +42,13 @@ fun ParkMateNavGraph(
 ) {
     val context = LocalContext.current
 
-    val database = remember(context) {
-        DatabaseProvider.getDatabase(context)
-    }
-
-    val vehicleRepository = remember(database) {
-        VehicleRepository(
-            database.vehicleDao()
-        )
-    }
-
-    val parkingRepository = remember(database) {
-        ParkingRepository(
-            database.parkingDao()
-        )
-    }
-
-    val savedLocationRepository = remember(database) {
-        SavedLocationRepository(
-            database.savedLocationDao()
-        )
-    }
-
-    val application = remember(context) {
-        context.applicationContext as Application
-    }
-
-    val alarmScheduler = remember(application) {
-        ParkingAlarmScheduler(application)
-    }
-
-    val workScheduler = remember(application) {
-        ParkingWorkScheduler(application)
-    }
+    val application = remember(context) { context.applicationContext as Application }
+    val container = remember(context) { context.appContainer }
+    val vehicleRepository = container.vehicleRepository
+    val parkingRepository = container.parkingRepository
+    val savedLocationRepository = container.savedLocationRepository
+    val alarmScheduler = container.alarmScheduler
+    val workScheduler = container.workScheduler
 
     val vehicleViewModel: VehicleViewModel = viewModel(
         factory = VehicleViewModel.Factory(

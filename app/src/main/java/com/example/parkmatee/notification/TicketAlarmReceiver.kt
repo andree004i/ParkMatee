@@ -3,7 +3,7 @@ package com.example.parkmatee.notification
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.example.parkmatee.data.db.DatabaseProvider
+import com.example.parkmatee.appContainer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -20,8 +20,7 @@ class TicketAlarmReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 // Non notificare se la sessione non esiste piu o e gia terminata
-                val session = DatabaseProvider.getDatabase(context)
-                    .parkingDao()
+                val session = context.appContainer.parkingRepository
                     .getParkingById(sessionId)
                 if (session == null || session.endTime != null) return@launch
 
