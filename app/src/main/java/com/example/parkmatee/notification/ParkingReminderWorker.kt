@@ -2,7 +2,9 @@ package com.example.parkmatee.notification
 
 import android.content.Context
 import androidx.work.CoroutineWorker
+import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.example.parkmatee.data.db.DatabaseProvider
 
 class ParkingReminderWorker(
     context: Context,
@@ -14,6 +16,18 @@ class ParkingReminderWorker(
         val startTimeMillis = inputData.getLong(KEY_START_TIME, System.currentTimeMillis())
 
         if (sessionId == -1) return Result.failure()
+
+        // Se la sessione non esiste piu (es. veicolo eliminato) o e terminata,
+        // il reminder si auto-cancella invece di notificare un parcheggio fantasma.
+        val session = DatabaseProvider.getDatabase(applicationContext)
+            .parkingDao()
+            .getParkingById(sessionId)
+
+        if (session == null || session.endTime != null) {
+            WorkManager.getInstance(applicationContext)
+                .cancelUniqueWork("parking_reminder_$sessionId")
+            return Result.success()
+        }
 
         val elapsedMillis = (System.currentTimeMillis() - startTimeMillis).coerceAtLeast(0L)
         val hours = elapsedMillis / 3_600_000L
