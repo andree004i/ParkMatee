@@ -2,6 +2,14 @@ package com.example.parkmatee.ui.savedlocations
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
+import com.example.parkmatee.util.fetchCurrentLocation
+import com.google.maps.android.compose.DragState
+import com.google.maps.android.compose.rememberMarkerState
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -56,6 +64,8 @@ fun SavedLocationScreen(
     var formMode by remember { mutableStateOf<SavedLocationFormMode?>(null) }
     var pendingGeofenceLocation by remember { mutableStateOf<SavedLocation?>(null) }
     var permissionRefreshKey by remember { mutableLongStateOf(0L) }
+    var geofencePermissionWarning by remember { mutableStateOf<String?>(null) }
+    val deleteRequest by viewModel.deleteRequest.collectAsState()
 
     // Flag per garantire che il deep-link/notifica venga gestito UNA SOLA VOLTA
     // e non si riattivi a ogni aggiornamento della lista 'locations' da Room
@@ -103,8 +113,11 @@ fun SavedLocationScreen(
                 location = location,
                 enabled = true
             )
-            pendingGeofenceLocation = null
+            geofencePermissionWarning = null
+        } else if (location != null) {
+            geofencePermissionWarning = GEOFENCE_PERMISSION_WARNING
         }
+        pendingGeofenceLocation = null
         refreshPermissions()
     }
 
@@ -112,7 +125,10 @@ fun SavedLocationScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { _ ->
         val location = pendingGeofenceLocation
-        if (location != null) {
+        if (location != null && !hasFineLocationPermission(context)) {
+            geofencePermissionWarning = GEOFENCE_PERMISSION_WARNING
+            pendingGeofenceLocation = null
+        } else if (location != null) {
             if (needsBackgroundLocationPermission(context)) {
                 backgroundLocationPermissionLauncher.launch(
                     Manifest.permission.ACCESS_BACKGROUND_LOCATION
@@ -187,33 +203,31 @@ fun SavedLocationScreen(
             SavedLocationGeofenceSection(
                 geofenceUiState = geofenceUiState,
                 notificationsEnabled = canShowSavedLocationGeofenceNotifications(context),
-                onEnableNotificationsClicked = ::requestNotificationPermission
+                onEnableNotificationsClicked = ::requestNotificationPermission,
+                permissionWarning = geofencePermissionWarning,
+                onOpenAppSettings = {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", context.packageName, null)
+                        )
+                    )
+                }
             )
 
             formMode?.let { mode ->
                 SavedLocationForm(
                     mode = mode,
-                    onSave = { name, latitude, longitude ->
-                        when (mode) {
-                            SavedLocationFormMode.Add -> {
-                                viewModel.addLocation(
-                                    name = name,
-                                    latitude = latitude,
-                                    longitude = longitude
-                                )
-                            }
-
-                            is SavedLocationFormMode.Edit -> {
-                                viewModel.updateLocation(
-                                    location = mode.location,
-                                    name = name,
-                                    latitude = latitude,
-                                    longitude = longitude
-                                )
-                            }
+                    onSave = { name, latitude, longitude, radius, onError ->
+                        viewModel.saveLocation(
+                            editing = (mode as? SavedLocationFormMode.Edit)?.location,
+                            name = name,
+                            latitude = latitude,
+                            longitude = longitude,
+                            radiusMeters = radius
+                        ) { error ->
+                            if (error == null) formMode = null else onError(error)
                         }
-
-                        formMode = null
                     },
                     onCancel = {
                         formMode = null
@@ -230,7 +244,7 @@ fun SavedLocationScreen(
                         onEdit = {
                             formMode = SavedLocationFormMode.Edit(it)
                         },
-                        onDelete = viewModel::deleteLocation,
+                        onDelete = viewModel::onDeleteRequested,
                         onToggleGeofence = { selectedLocation ->
                             if (selectedLocation.geofenceEnabled) {
                                 viewModel.setGeofenceEnabled(
@@ -247,13 +261,40 @@ fun SavedLocationScreen(
             }
         }
     }
+
+    deleteRequest?.let { request ->
+        AlertDialog(
+            onDismissRequest = viewModel::onDeleteDismissed,
+            title = { Text("Eliminare ${request.location.name}?") },
+            text = {
+                Text(
+                    if (request.hasActiveParking) {
+                        "Hai una sosta attiva in questo luogo: resta attiva e dovrai chiuderla a mano. Le soste gia registrate restano nello storico."
+                    } else {
+                        "Le soste gia registrate restano nello storico. Il geofence di questo luogo verra rimosso."
+                    }
+                )
+            },
+            confirmButton = {
+                Button(onClick = viewModel::onDeleteConfirmed) { Text("Elimina") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = viewModel::onDeleteDismissed) { Text("Annulla") }
+            }
+        )
+    }
 }
+
+private const val GEOFENCE_PERMISSION_WARNING =
+    "Per il geofence servono la posizione precisa e la posizione in background (\"Sempre\"). Abilitale dalle impostazioni dell'app."
 
 @Composable
 private fun SavedLocationGeofenceSection(
     geofenceUiState: SavedLocationGeofenceUiState,
     notificationsEnabled: Boolean,
-    onEnableNotificationsClicked: () -> Unit
+    onEnableNotificationsClicked: () -> Unit,
+    permissionWarning: String?,
+    onOpenAppSettings: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -277,6 +318,16 @@ private fun SavedLocationGeofenceSection(
             Text(text = "Luoghi monitorati: ${geofenceUiState.monitoredCount}")
             Text(text = "Entrata: propone di avviare un parcheggio.")
             Text(text = "Uscita: propone di terminare il parcheggio rilevante.")
+
+            permissionWarning?.let { warning ->
+                Text(text = warning)
+                OutlinedButton(
+                    onClick = onOpenAppSettings,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = "Apri impostazioni app")
+                }
+            }
 
             if (!notificationsEnabled) {
                 Button(
@@ -355,22 +406,55 @@ private fun SavedLocationItem(
 @Composable
 private fun SavedLocationForm(
     mode: SavedLocationFormMode,
-    onSave: (String, Double, Double) -> Unit,
+    onSave: (String, Double, Double, Float, (String) -> Unit) -> Unit,
     onCancel: () -> Unit
 ) {
+    val context = LocalContext.current
     val editingLocation = (mode as? SavedLocationFormMode.Edit)?.location
 
     var name by remember(editingLocation?.id) {
         mutableStateOf(editingLocation?.name ?: "")
     }
+    // In creazione i campi partono vuoti: niente luogo "Bologna" salvato per sbaglio.
     var latitude by remember(editingLocation?.id) {
-        mutableStateOf(editingLocation?.latitude?.toString() ?: "44.4949")
+        mutableStateOf(editingLocation?.latitude?.toString() ?: "")
     }
     var longitude by remember(editingLocation?.id) {
-        mutableStateOf(editingLocation?.longitude?.toString() ?: "11.3426")
+        mutableStateOf(editingLocation?.longitude?.toString() ?: "")
+    }
+    var radius by remember(editingLocation?.id) {
+        mutableStateOf(editingLocation?.geofenceRadiusMeters ?: DEFAULT_RADIUS_METERS)
     }
     var errorMessage by remember(editingLocation?.id) {
         mutableStateOf<String?>(null)
+    }
+    var isLoadingGps by remember { mutableStateOf(false) }
+
+    fun loadGpsPosition() {
+        isLoadingGps = true
+        fetchCurrentLocation(
+            context = context,
+            onLocationLoaded = { lat, lng ->
+                latitude = lat.toString()
+                longitude = lng.toString()
+                errorMessage = null
+                isLoadingGps = false
+            },
+            onLocationError = { message ->
+                errorMessage = message
+                isLoadingGps = false
+            }
+        )
+    }
+
+    val gpsPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            loadGpsPosition()
+        } else {
+            errorMessage = "Permesso posizione non concesso: scegli il punto sulla mappa o inserisci le coordinate."
+        }
     }
 
     Card(
@@ -395,8 +479,23 @@ private fun SavedLocationForm(
                     errorMessage = null
                 },
                 label = { Text(text = "Nome") },
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
+
+            Button(
+                onClick = {
+                    if (hasFineLocationPermission(context)) {
+                        loadGpsPosition()
+                    } else {
+                        gpsPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                    }
+                },
+                enabled = !isLoadingGps,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = if (isLoadingGps) "Recupero posizione..." else "Usa posizione attuale (GPS)")
+            }
 
             SavedLocationPickerMap(
                 latitude = latitude,
@@ -416,7 +515,7 @@ private fun SavedLocationForm(
                 },
                 label = { Text(text = "Latitudine") },
                 supportingText = {
-                    Text(text = "Compilata dalla mappa o modificabile a mano")
+                    Text(text = "Dal GPS, dalla mappa o a mano")
                 },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Decimal
@@ -432,13 +531,24 @@ private fun SavedLocationForm(
                 },
                 label = { Text(text = "Longitudine") },
                 supportingText = {
-                    Text(text = "Compilata dalla mappa o modificabile a mano")
+                    Text(text = "Dal GPS, dalla mappa o a mano")
                 },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Decimal
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
+
+            Text(text = "Raggio del geofence")
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                RADIUS_OPTIONS.forEach { option ->
+                    FilterChip(
+                        selected = radius == option,
+                        onClick = { radius = option },
+                        label = { Text(text = "${option.toInt()} m") }
+                    )
+                }
+            }
 
             errorMessage?.let { message ->
                 Text(text = message)
@@ -457,29 +567,26 @@ private fun SavedLocationForm(
 
                 Button(
                     onClick = {
-                        val parsedName = name.trim()
                         val parsedLatitude = latitude.toCoordinateOrNull()
                         val parsedLongitude = longitude.toCoordinateOrNull()
 
                         when {
-                            parsedName.isBlank() -> {
+                            name.isBlank() -> {
                                 errorMessage = "Inserisci un nome."
                             }
 
                             parsedLatitude == null || parsedLatitude !in -90.0..90.0 -> {
-                                errorMessage = "Inserisci una latitudine valida."
+                                errorMessage = "Scegli un punto (GPS, mappa) o inserisci una latitudine valida."
                             }
 
                             parsedLongitude == null || parsedLongitude !in -180.0..180.0 -> {
-                                errorMessage = "Inserisci una longitudine valida."
+                                errorMessage = "Scegli un punto (GPS, mappa) o inserisci una longitudine valida."
                             }
 
                             else -> {
-                                onSave(
-                                    parsedName,
-                                    parsedLatitude,
-                                    parsedLongitude
-                                )
+                                onSave(name, parsedLatitude, parsedLongitude, radius) { message ->
+                                    errorMessage = message
+                                }
                             }
                         }
                     },
@@ -496,6 +603,9 @@ private fun SavedLocationForm(
         }
     }
 }
+
+private const val DEFAULT_RADIUS_METERS = 120f
+private val RADIUS_OPTIONS = listOf(100f, 120f, 150f, 200f, 300f)
 
 @Composable
 private fun SavedLocationPickerMap(
@@ -519,11 +629,31 @@ private fun SavedLocationPickerMap(
             14f
         )
     }
+    val markerState = rememberMarkerState(position = selectedPosition ?: defaultPosition)
+
+    // La mappa segue la posizione scelta da GPS o campi di testo.
+    // (Niente CameraUpdateFactory: richiede la mappa gia inizializzata.)
+    LaunchedEffect(selectedPosition) {
+        selectedPosition?.let { position ->
+            markerState.position = position
+            cameraPositionState.position = CameraPosition.fromLatLngZoom(
+                position,
+                cameraPositionState.position.zoom
+            )
+        }
+    }
+
+    // Fine del trascinamento: la posizione del marker diventa quella salvata.
+    LaunchedEffect(markerState.dragState) {
+        if (markerState.dragState == DragState.END) {
+            onPositionSelected(markerState.position)
+        }
+    }
 
     Column(
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(text = "Tocca la mappa per scegliere le coordinate")
+        Text(text = "Tocca la mappa o trascina il marker per scegliere le coordinate")
 
         GoogleMap(
             modifier = Modifier
@@ -536,9 +666,10 @@ private fun SavedLocationPickerMap(
             ),
             onMapClick = onPositionSelected
         ) {
-            selectedPosition?.let { position ->
+            if (selectedPosition != null) {
                 Marker(
-                    state = MarkerState(position = position),
+                    state = markerState,
+                    draggable = true,
                     title = "Luogo salvato"
                 )
             }

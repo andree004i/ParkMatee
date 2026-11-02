@@ -11,8 +11,11 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface SavedLocationDao {
 
-    @Query("SELECT * FROM saved_locations")
+    @Query("SELECT * FROM saved_locations ORDER BY name COLLATE NOCASE")
     fun getAllLocations(): Flow<List<SavedLocation>>
+
+    @Query("SELECT COUNT(*) FROM saved_locations WHERE LOWER(name) = LOWER(:name) AND id != :excludeId")
+    suspend fun countByName(name: String, excludeId: Int): Int
 
     @Insert
     suspend fun insert(location: SavedLocation)

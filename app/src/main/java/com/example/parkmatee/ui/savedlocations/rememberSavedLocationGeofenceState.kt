@@ -26,6 +26,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+@Volatile
+private var lastNotifiedLocationKey: String? = null
+
 @Composable
 fun rememberSavedLocationGeofenceState(
     context: Context,
@@ -69,43 +72,35 @@ fun rememberSavedLocationGeofenceState(
             return@LaunchedEffect
         }
 
-        val geofences = enabledLocations.map { location ->
-            createSavedLocationGeofence(location)
-        }
-
         uiState = SavedLocationGeofenceUiState(
             active = true,
             monitoredCount = enabledLocations.size,
             message = "Aggiornamento geofence dei luoghi salvati in corso..."
         )
 
-        geofencingClient.removeGeofences(pendingIntent)
-            .addOnCompleteListener {
-                registerSavedLocationGeofences(
-                    context = context,
-                    geofencingRequest = GeofencingRequest.Builder()
-                        .addGeofences(geofences)
-                        .build(),
-                    pendingIntent = pendingIntent,
-                    onSuccess = {
-                        uiState = SavedLocationGeofenceUiState(
-                            active = true,
-                            monitoredCount = enabledLocations.size,
-                            message = "Geofencing attivo sui luoghi salvati selezionati."
-                        )
+        registerEnabledSavedLocationGeofences(context, savedLocations)
+            ?.addOnSuccessListener {
+                uiState = SavedLocationGeofenceUiState(
+                    active = true,
+                    monitoredCount = enabledLocations.size,
+                    message = "Geofencing attivo sui luoghi salvati selezionati."
+                )
 
-                        notifyCurrentSavedLocationStatus(
-                            context = context,
-                            enabledLocations = enabledLocations
-                        )
-                    },
-                    onError = {
-                        uiState = SavedLocationGeofenceUiState(
-                            active = false,
-                            monitoredCount = enabledLocations.size,
-                            message = "Errore durante l'attivazione del geofencing."
-                        )
-                    }
+                // La notifica di stato parte solo se l'insieme dei luoghi attivi e cambiato,
+                // non a ogni riapertura della schermata.
+                if (lastNotifiedLocationKey != enabledLocationKey) {
+                    lastNotifiedLocationKey = enabledLocationKey
+                    notifyCurrentSavedLocationStatus(
+                        context = context,
+                        enabledLocations = enabledLocations
+                    )
+                }
+            }
+            ?.addOnFailureListener {
+                uiState = SavedLocationGeofenceUiState(
+                    active = false,
+                    monitoredCount = enabledLocations.size,
+                    message = "Errore durante l'attivazione del geofencing."
                 )
             }
     }
@@ -144,27 +139,6 @@ fun canShowSavedLocationGeofenceNotifications(
                 context,
                 Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
-}
-
-@SuppressLint("MissingPermission")
-private fun registerSavedLocationGeofences(
-    context: Context,
-    geofencingRequest: GeofencingRequest,
-    pendingIntent: PendingIntent,
-    onSuccess: () -> Unit,
-    onError: () -> Unit
-) {
-    LocationServices.getGeofencingClient(context)
-        .addGeofences(
-            geofencingRequest,
-            pendingIntent
-        )
-        .addOnSuccessListener {
-            onSuccess()
-        }
-        .addOnFailureListener {
-            onError()
-        }
 }
 
 @SuppressLint("MissingPermission")
@@ -270,7 +244,7 @@ private data class SavedLocationDistanceStatus(
     val isInside: Boolean
 )
 
-private fun createSavedLocationGeofence(
+internal fun createSavedLocationGeofence(
     location: SavedLocation
 ): Geofence {
     return Geofence.Builder()
@@ -288,7 +262,7 @@ private fun createSavedLocationGeofence(
         .build()
 }
 
-private fun createSavedLocationGeofencePendingIntent(
+internal fun createSavedLocationGeofencePendingIntent(
     context: Context
 ): PendingIntent {
     val intent = Intent(
