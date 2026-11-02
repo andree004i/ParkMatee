@@ -1,17 +1,9 @@
 package com.example.parkmatee.ui.parking
 
 import com.example.parkmatee.data.entity.ParkingSession
+import com.example.parkmatee.data.entity.ParkingType
 import com.example.parkmatee.data.entity.SavedLocation
 import com.example.parkmatee.data.entity.Vehicle
-
-enum class ParkingType(
-    val dbValue: String,
-    val label: String
-) {
-    FREE("free", "Gratuito"),
-    HOURLY("hourly", "A ore"),
-    FIXED("fixed", "Ticket fisso")
-}
 
 data class ParkingUiState(
     val vehicles: List<Vehicle> = emptyList(),

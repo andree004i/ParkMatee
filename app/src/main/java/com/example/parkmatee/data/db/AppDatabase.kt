@@ -11,15 +11,16 @@ import com.example.parkmatee.data.entity.SavedLocation
 import com.example.parkmatee.data.entity.Vehicle
 
 // L'istanza viene creata esclusivamente da DatabaseProvider (unica fonte di verita).
+// Versione 6: ParkingSession.type e' ora un enum (ParkingType) con TypeConverter.
 // Versione 5: Vehicle.type e' ora un enum (VehicleType) con TypeConverter.
 // Versione 4: lo schema delle entity era cambiato senza aumentare la versione, quindi i
 // database gia creati con la v3 non erano piu validi (Room: "cannot verify the data integrity").
 // DatabaseProvider usa fallbackToDestructiveMigration, quindi le tabelle vengono ricreate.
 @Database(
     entities = [Vehicle::class, ParkingSession::class, SavedLocation::class],
-    version = 5
+    version = 6
 )
-@TypeConverters(VehicleTypeConverter::class)
+@TypeConverters(VehicleTypeConverter::class, ParkingTypeConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun vehicleDao(): VehicleDao
     abstract fun parkingDao(): ParkingDao

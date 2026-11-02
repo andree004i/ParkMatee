@@ -54,7 +54,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.parkmatee.data.entity.ParkingSession
+import com.example.parkmatee.data.entity.ParkingType
 import com.example.parkmatee.data.entity.SavedLocation
 import com.example.parkmatee.notification.canShowParkingNotifications
 import com.example.parkmatee.notification.ensureParkingNotificationChannel
@@ -288,7 +290,7 @@ private fun ParkingContent(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            ParkingType.values().forEach { type ->
+            ParkingType.entries.forEach { type ->
                 FilterChip(
                     selected = uiState.selectedType == type,
                     onClick = { onParkingTypeSelected(type) },
@@ -657,10 +659,18 @@ private fun ActiveParkingsSection(
 ) {
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            nowMillis = System.currentTimeMillis()
-            delay(1_000L)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val hasActiveParkings = uiState.activeParkings.isNotEmpty()
+
+    // Il ticker gira solo con l'app visibile e solo se c'e una sosta attiva.
+    // Ogni tick rilegge l'orologio: nessun drift.
+    LaunchedEffect(lifecycleOwner, hasActiveParkings) {
+        if (!hasActiveParkings) return@LaunchedEffect
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                nowMillis = System.currentTimeMillis()
+                delay(1_000L)
+            }
         }
     }
 

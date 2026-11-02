@@ -1,16 +1,17 @@
 package com.example.parkmatee.ui.history
 
 import com.example.parkmatee.data.entity.ParkingSession
+import com.example.parkmatee.data.entity.ParkingType
 import com.example.parkmatee.data.entity.Vehicle
 
 enum class HistoryTypeFilter(
-    val dbValue: String?,
+    val type: ParkingType?,
     val label: String
 ) {
     ALL(null, "Tutti"),
-    FREE("free", "Gratuito"),
-    HOURLY("hourly", "A ore"),
-    FIXED("fixed", "Ticket fisso")
+    FREE(ParkingType.FREE, ParkingType.FREE.label),
+    HOURLY(ParkingType.HOURLY, ParkingType.HOURLY.label),
+    FIXED(ParkingType.FIXED, ParkingType.FIXED.label)
 }
 
 data class HistoryUiState(

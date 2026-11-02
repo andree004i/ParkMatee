@@ -49,10 +49,10 @@ private fun HistoryContent(
     onVehicleFilterSelected: (Int?) -> Unit
 ) {
     val filteredHistory = uiState.parkingHistory.filter { session ->
-        val selectedDbValue = uiState.selectedTypeFilter.dbValue
+        val selectedType = uiState.selectedTypeFilter.type
 
         val matchesType =
-            selectedDbValue == null || session.type == selectedDbValue
+            selectedType == null || session.type == selectedType
 
         val matchesVehicle =
             uiState.selectedVehicleId == null ||
@@ -197,7 +197,7 @@ private fun HistoryItem(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(text = vehicle?.name ?: "Veicolo sconosciuto")
-            Text(text = "Tipo: ${formatParkingType(session.type)}")
+            Text(text = "Tipo: ${session.type.label}")
             Text(text = "Inizio: ${formatTime(session.startTime)}")
             Text(text = "Fine: ${formatTime(session.endTime)}")
             Text(text = "Posizione: ${session.latitude}, ${session.longitude}")
@@ -210,17 +210,6 @@ private fun HistoryItem(
                 Text(text = "Nota: $note")
             }
         }
-    }
-}
-
-private fun formatParkingType(
-    type: String
-): String {
-    return when (type) {
-        "free" -> "Gratuito"
-        "hourly" -> "A ore"
-        "fixed" -> "Ticket fisso"
-        else -> type
     }
 }
 

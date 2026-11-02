@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.parkmatee.data.entity.ParkingSession
+import com.example.parkmatee.data.entity.ParkingType
 import com.example.parkmatee.data.repository.ParkingRepository
 import com.example.parkmatee.data.repository.SavedLocationRepository
 import com.example.parkmatee.data.repository.VehicleRepository
@@ -240,7 +241,7 @@ class ParkingViewModel(
 
         val session = ParkingSession(
             vehicleId = finalVehicleId,
-            type = effectiveState.selectedType.dbValue,
+            type = effectiveState.selectedType,
             startTime = startTime,
             latitude = latitude,
             longitude = longitude,

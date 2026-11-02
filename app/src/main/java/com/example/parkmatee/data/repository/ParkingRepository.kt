@@ -2,7 +2,8 @@ package com.example.parkmatee.data.repository
 
 import com.example.parkmatee.data.dao.ParkingDao
 import com.example.parkmatee.data.entity.ParkingSession
-import com.example.parkmatee.util.ParkingFormatters
+import com.example.parkmatee.data.entity.costAt
+import com.example.parkmatee.data.entity.validationError
 import kotlinx.coroutines.flow.Flow
 
 class ParkingRepository(
@@ -43,22 +44,18 @@ class ParkingRepository(
     suspend fun startParking(
         session: ParkingSession
     ): Long {
+        // Validazione di dominio: nessun punto d'ingresso puo salvare una sosta incoerente.
+        session.validationError()?.let { throw IllegalArgumentException(it) }
         return parkingDao.insertParking(session)
     }
+
+    private fun ParkingSession.closedAt(endTime: Long): ParkingSession =
+        copy(endTime = endTime, finalCost = costAt(endTime))
 
     suspend fun endParking(
         session: ParkingSession
     ) {
-        val endTime = System.currentTimeMillis()
-        val elapsedMillis = (endTime - session.startTime).coerceAtLeast(0L)
-        val calculatedCost = ParkingFormatters.calculateLiveCost(session, elapsedMillis)
-
-        parkingDao.updateParking(
-            session.copy(
-                endTime = endTime,
-                finalCost = calculatedCost
-            )
-        )
+        parkingDao.updateParking(session.closedAt(System.currentTimeMillis()))
     }
 
     suspend fun updateParking(
@@ -74,19 +71,9 @@ class ParkingRepository(
     }
 
     suspend fun closeActiveSessionIfExists(vehicleId: Int): ParkingSession? {
-        val activeSession = parkingDao.getActiveSessionForVehicle(vehicleId)
-        if (activeSession != null) {
-            val now = System.currentTimeMillis()
-            val elapsed = (now - activeSession.startTime).coerceAtLeast(0L)
-            val liveCost = ParkingFormatters.calculateLiveCost(activeSession, elapsed)
-
-            val updatedSession = activeSession.copy(
-                endTime = now,
-                finalCost = liveCost
-            )
-            parkingDao.updateParking(updatedSession)
-            return updatedSession
-        }
-        return null
+        val activeSession = parkingDao.getActiveSessionForVehicle(vehicleId) ?: return null
+        val updatedSession = activeSession.closedAt(System.currentTimeMillis())
+        parkingDao.updateParking(updatedSession)
+        return updatedSession
     }
 }

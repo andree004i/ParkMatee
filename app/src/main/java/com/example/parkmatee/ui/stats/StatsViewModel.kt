@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.parkmatee.data.entity.ParkingSession
+import com.example.parkmatee.data.entity.ParkingType
+import com.example.parkmatee.data.entity.costAt
 import com.example.parkmatee.data.repository.ParkingRepository
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -64,9 +66,9 @@ class StatsViewModel(
 
         val durations = completedParkings.map { session -> session.durationMinutes() }
 
-        val freeSessions = completedParkings.filter { session -> session.type == FREE_TYPE }
-        val hourlySessions = completedParkings.filter { session -> session.type == HOURLY_TYPE }
-        val fixedSessions = completedParkings.filter { session -> session.type == FIXED_TYPE }
+        val freeSessions = completedParkings.filter { session -> session.type == ParkingType.FREE }
+        val hourlySessions = completedParkings.filter { session -> session.type == ParkingType.HOURLY }
+        val fixedSessions = completedParkings.filter { session -> session.type == ParkingType.FIXED }
 
         val freeCost = roundToTwoDecimals(freeSessions.sumOf { session -> session.finalOrEstimatedCost() })
         val hourlyCost = roundToTwoDecimals(hourlySessions.sumOf { session -> session.finalOrEstimatedCost() })
@@ -189,18 +191,8 @@ class StatsViewModel(
         return ((endTime - startTime) / MILLIS_PER_MINUTE).coerceAtLeast(0L)
     }
 
-    private fun ParkingSession.finalOrEstimatedCost(): Double {
-        finalCost?.let { cost -> return cost }
-
-        return when (type) {
-            HOURLY_TYPE -> {
-                val durationHours = durationMinutes().toDouble() / MINUTES_PER_HOUR
-                (hourlyRate ?: 0.0) * durationHours
-            }
-            FIXED_TYPE -> fixedCost ?: 0.0
-            else -> 0.0
-        }
-    }
+    private fun ParkingSession.finalOrEstimatedCost(): Double =
+        finalCost ?: costAt(endTime ?: startTime)
 
     private fun roundToTwoDecimals(value: Double): Double {
         return round(value * 100.0) / 100.0
@@ -220,9 +212,6 @@ class StatsViewModel(
     }
 
     companion object {
-        private const val FREE_TYPE = "free"
-        private const val HOURLY_TYPE = "hourly"
-        private const val FIXED_TYPE = "fixed"
         private const val MILLIS_PER_MINUTE = 60_000L
         private const val MILLIS_PER_DAY = 24 * 60 * 60 * 1_000L
         private const val MINUTES_PER_HOUR = 60.0

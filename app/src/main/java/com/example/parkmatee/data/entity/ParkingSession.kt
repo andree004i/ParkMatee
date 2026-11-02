@@ -4,6 +4,8 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.ForeignKey
 import androidx.room.Index
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 @Entity(
     tableName = "parking_sessions",
@@ -23,8 +25,7 @@ data class ParkingSession(
 
     val vehicleId: Int,
 
-    // "free", "hourly", "fixed"
-    val type: String,
+    val type: ParkingType,
 
     val startTime: Long,
     val endTime: Long? = null,
@@ -51,3 +52,36 @@ data class ParkingSession(
     val photoPath: String? = null,
     val note: String? = null
 )
+
+private const val MILLIS_PER_HOUR = 3_600_000.0
+
+/**
+ * Costo per un dato tempo trascorso. Unica formula dell'app: proporzionale al tempo
+ * effettivo (nessuna "ora iniziata"), arrotondata al centesimo (HALF_UP).
+ * Lancia IllegalStateException se i dati sono incoerenti con il tipo.
+ */
+fun ParkingSession.costForElapsed(elapsedMillis: Long): Double {
+    val elapsed = elapsedMillis.coerceAtLeast(0L)
+    val raw = when (type) {
+        ParkingType.FREE -> 0.0
+        ParkingType.HOURLY -> checkNotNull(hourlyRate) { "Tariffa oraria mancante" } * elapsed / MILLIS_PER_HOUR
+        ParkingType.FIXED -> checkNotNull(fixedCost) { "Costo fisso mancante" }
+    }
+    return BigDecimal.valueOf(raw).setScale(2, RoundingMode.HALF_UP).toDouble()
+}
+
+/** Costo all'istante [nowMillis] (o alla chiusura, se la sosta e terminata). */
+fun ParkingSession.costAt(nowMillis: Long): Double =
+    costForElapsed((endTime ?: nowMillis) - startTime)
+
+/** Controllo di coerenza di dominio: null se valida, altrimenti il motivo. */
+fun ParkingSession.validationError(): String? = when (type) {
+    ParkingType.FREE -> null
+    ParkingType.HOURLY ->
+        if ((hourlyRate ?: 0.0) <= 0.0) "Tariffa oraria mancante o non valida" else null
+    ParkingType.FIXED -> when {
+        fixedCost == null || fixedCost < 0.0 -> "Costo fisso mancante o non valido"
+        expiryTime == null || expiryTime <= startTime -> "Scadenza del ticket mancante o non valida"
+        else -> null
+    }
+}
