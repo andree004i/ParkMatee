@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Build
+import android.os.SystemClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -153,30 +154,37 @@ private fun notifyCurrentSavedLocationStatus(
     val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
     val cancellationTokenSource = CancellationTokenSource()
 
-    fusedLocationClient.lastLocation
-        .addOnSuccessListener { lastKnownLocation ->
-            if (lastKnownLocation != null) {
-                notifyClosestSavedLocationStatus(
-                    context = context,
-                    currentLocation = lastKnownLocation,
-                    enabledLocations = enabledLocations
-                )
-            } else {
-                fusedLocationClient.getCurrentLocation(
-                    Priority.PRIORITY_HIGH_ACCURACY,
-                    cancellationTokenSource.token
-                ).addOnSuccessListener { freshLocation ->
-                    freshLocation?.let { location ->
-                        notifyClosestSavedLocationStatus(
-                            context = context,
-                            currentLocation = location,
-                            enabledLocations = enabledLocations
-                        )
-                    }
+    fun notifyWith(location: Location) {
+        notifyClosestSavedLocationStatus(
+            context = context,
+            currentLocation = location,
+            enabledLocations = enabledLocations
+        )
+    }
+
+    // Posizione FRESCA: lastLocation puo essere quella precedente (es. sull'emulatore non si
+    // aggiorna finche nessuno richiede la posizione) e darebbe una distanza sbagliata.
+    // lastLocation resta solo come ripiego, e solo se recente.
+    fusedLocationClient.getCurrentLocation(
+        Priority.PRIORITY_HIGH_ACCURACY,
+        cancellationTokenSource.token
+    ).addOnSuccessListener { freshLocation ->
+        if (freshLocation != null) {
+            notifyWith(freshLocation)
+        } else {
+            fusedLocationClient.lastLocation.addOnSuccessListener { last ->
+                val ageMillis = last?.let {
+                    (SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos) / 1_000_000L
+                }
+                if (last != null && ageMillis != null && ageMillis < MAX_LAST_LOCATION_AGE_MILLIS) {
+                    notifyWith(last)
                 }
             }
         }
+    }
 }
+
+private const val MAX_LAST_LOCATION_AGE_MILLIS = 60_000L
 
 private fun notifyClosestSavedLocationStatus(
     context: Context,
@@ -258,6 +266,8 @@ internal fun createSavedLocationGeofence(
             Geofence.GEOFENCE_TRANSITION_ENTER or
                     Geofence.GEOFENCE_TRANSITION_EXIT
         )
+        // Risposta piu rapida possibile (a scapito della batteria): utile per il demo.
+        .setNotificationResponsiveness(0)
         .setExpirationDuration(Geofence.NEVER_EXPIRE)
         .build()
 }
