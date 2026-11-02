@@ -1,5 +1,6 @@
 package com.example.parkmatee.ui
 
+import android.app.Application
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -15,6 +16,8 @@ import com.example.parkmatee.data.db.DatabaseProvider
 import com.example.parkmatee.data.repository.ParkingRepository
 import com.example.parkmatee.data.repository.SavedLocationRepository
 import com.example.parkmatee.data.repository.VehicleRepository
+import com.example.parkmatee.notification.ParkingAlarmScheduler
+import com.example.parkmatee.notification.ParkingWorkScheduler
 import com.example.parkmatee.ui.history.HistoryScreen
 import com.example.parkmatee.ui.history.HistoryViewModel
 import com.example.parkmatee.ui.map.MapScreen
@@ -66,6 +69,18 @@ fun ParkMateNavGraph(
         )
     }
 
+    val application = remember(context) {
+        context.applicationContext as Application
+    }
+
+    val alarmScheduler = remember(application) {
+        ParkingAlarmScheduler(application)
+    }
+
+    val workScheduler = remember(application) {
+        ParkingWorkScheduler(application)
+    }
+
     val vehicleViewModel: VehicleViewModel = viewModel(
         factory = VehicleViewModel.Factory(
             vehicleRepository
@@ -74,9 +89,12 @@ fun ParkMateNavGraph(
 
     val parkingViewModel: ParkingViewModel = viewModel(
         factory = ParkingViewModel.Factory(
+            application = application,
             vehicleRepository = vehicleRepository,
             parkingRepository = parkingRepository,
-            savedLocationRepository = savedLocationRepository
+            savedLocationRepository = savedLocationRepository,
+            alarmScheduler = alarmScheduler,
+            workScheduler = workScheduler
         )
     )
 
