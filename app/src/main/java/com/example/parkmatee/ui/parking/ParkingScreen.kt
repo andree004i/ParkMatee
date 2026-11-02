@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import com.google.maps.android.compose.rememberMarkerState
 import com.google.maps.android.compose.DragState
-import com.google.android.gms.maps.CameraUpdateFactory
 import androidx.core.app.ActivityCompat
 import androidx.compose.material3.AlertDialog
 import android.provider.Settings
@@ -678,7 +677,12 @@ private fun ParkingPositionPickerMap(
     LaunchedEffect(selectedPosition) {
         selectedPosition?.let { position ->
             markerState.position = position
-            cameraPositionState.animate(CameraUpdateFactory.newLatLng(position))
+            // Niente CameraUpdateFactory: richiede la mappa gia inizializzata e fa crashare se la
+            // posizione arriva prima del caricamento. Impostare la posizione e sempre sicuro.
+            cameraPositionState.position = CameraPosition.fromLatLngZoom(
+                position,
+                cameraPositionState.position.zoom
+            )
         }
     }
 
