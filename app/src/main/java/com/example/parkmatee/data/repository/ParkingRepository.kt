@@ -36,6 +36,11 @@ class ParkingRepository(
     ): ParkingSession? =
         parkingDao.getActiveSessionForVehicle(vehicleId)
 
+    suspend fun getActiveSessionForSavedLocationId(
+        savedLocationId: Int
+    ): ParkingSession? =
+        parkingDao.getActiveSessionForSavedLocationId(savedLocationId)
+
     suspend fun getActiveSessionForSavedLocation(
         savedLocationName: String
     ): ParkingSession? =

@@ -51,7 +51,7 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
                             try {
                                 val hasActiveParking = hasActiveParkingForSavedLocation(
                                     context = context,
-                                    savedLocationName = triggeredLocationName
+                                    savedLocationId = savedLocationId
                                 )
 
                                 val notificationContent = buildGeofenceNotificationContent(
@@ -83,11 +83,11 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
 
     private suspend fun hasActiveParkingForSavedLocation(
         context: Context,
-        savedLocationName: String
+        savedLocationId: Int
     ): Boolean {
         return DatabaseProvider.getDatabase(context)
             .parkingDao()
-            .getActiveSessionForSavedLocation(savedLocationName) != null
+            .getActiveSessionForSavedLocationId(savedLocationId) != null
     }
 
     companion object {

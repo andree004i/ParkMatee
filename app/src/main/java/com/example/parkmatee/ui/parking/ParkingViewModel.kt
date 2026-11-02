@@ -156,14 +156,33 @@ class ParkingViewModel(
 
     fun onLatitudeChanged(value: String) {
         _uiState.update {
-            it.copy(latitude = value, selectedSavedLocationId = null, savedLocationName = null, errorMessage = null, successMessage = null)
+            it.copy(latitude = value, locationSource = LocationSource.MANUAL, selectedSavedLocationId = null, savedLocationName = null, errorMessage = null, successMessage = null)
         }
     }
 
     fun onLongitudeChanged(value: String) {
         _uiState.update {
-            it.copy(longitude = value, selectedSavedLocationId = null, savedLocationName = null, errorMessage = null, successMessage = null)
+            it.copy(longitude = value, locationSource = LocationSource.MANUAL, selectedSavedLocationId = null, savedLocationName = null, errorMessage = null, successMessage = null)
         }
+    }
+
+    /** Punto scelto toccando o trascinando il marker sulla mappa. */
+    fun onMapPositionSelected(latitude: Double, longitude: Double) {
+        _uiState.update {
+            it.copy(
+                latitude = latitude.toString(),
+                longitude = longitude.toString(),
+                locationSource = LocationSource.MAP,
+                selectedSavedLocationId = null,
+                savedLocationName = null,
+                errorMessage = null,
+                successMessage = null
+            )
+        }
+    }
+
+    fun onLocationRequested() {
+        _uiState.update { it.copy(isLoadingLocation = true, locationHelp = LocationHelp.NONE, errorMessage = null, successMessage = null) }
     }
 
     fun onSavedLocationSelected(locationId: Int?) {
@@ -177,6 +196,7 @@ class ParkingViewModel(
                     latitude = selectedLocation.latitude.toString(),
                     longitude = selectedLocation.longitude.toString(),
                     savedLocationName = selectedLocation.name,
+                    locationSource = LocationSource.SAVED_PLACE,
                     errorMessage = null,
                     successMessage = "Luogo salvato selezionato."
                 )
@@ -186,12 +206,16 @@ class ParkingViewModel(
 
     fun onCurrentLocationLoaded(latitude: Double, longitude: Double) {
         _uiState.update {
-            it.copy(latitude = latitude.toString(), longitude = longitude.toString(), selectedSavedLocationId = null, savedLocationName = null, errorMessage = null, successMessage = "Posizione attuale caricata.")
+            it.copy(latitude = latitude.toString(), longitude = longitude.toString(), locationSource = LocationSource.GPS, isLoadingLocation = false, locationHelp = LocationHelp.NONE, selectedSavedLocationId = null, savedLocationName = null, errorMessage = null, successMessage = "Posizione attuale caricata.")
         }
     }
 
     fun onLocationError(message: String) {
-        _uiState.update { it.copy(errorMessage = message, successMessage = null) }
+        _uiState.update { it.copy(isLoadingLocation = false, errorMessage = message, successMessage = null) }
+    }
+
+    fun onLocationProblem(message: String, help: LocationHelp) {
+        _uiState.update { it.copy(isLoadingLocation = false, locationHelp = help, errorMessage = message, successMessage = null) }
     }
 
     fun onPhotoCaptured(photoPath: String) {
@@ -246,6 +270,7 @@ class ParkingViewModel(
             latitude = latitude,
             longitude = longitude,
             savedLocationName = effectiveState.savedLocationName,
+            savedLocationId = effectiveState.selectedSavedLocationId,
             hourlyRate = hourlyRate,
             fixedCost = fixedCost,
             expiryTime = expiryTime,
@@ -293,6 +318,7 @@ class ParkingViewModel(
                         warningMinutes = 5,
                         latitude = "",
                         longitude = "",
+                        locationSource = LocationSource.NONE,
                         savedLocationName = null,
                         photoPath = null,
                         note = "",

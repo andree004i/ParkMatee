@@ -1,8 +1,16 @@
 package com.example.parkmatee.ui.parking
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Context
+import com.google.maps.android.compose.rememberMarkerState
+import com.google.maps.android.compose.DragState
+import com.google.android.gms.maps.CameraUpdateFactory
+import androidx.core.app.ActivityCompat
+import androidx.compose.material3.AlertDialog
+import android.provider.Settings
+import android.content.Intent
+import android.content.ContextWrapper
+import android.app.Activity
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -58,14 +66,13 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.data.entity.ParkingType
 import com.example.parkmatee.data.entity.SavedLocation
+import com.example.parkmatee.util.fetchCurrentLocation
+import com.example.parkmatee.util.isDeviceLocationEnabled
 import com.example.parkmatee.notification.canShowParkingNotifications
 import com.example.parkmatee.notification.ensureParkingNotificationChannel
 import com.example.parkmatee.util.ParkingFormatters
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
@@ -116,8 +123,7 @@ fun ParkingScreen(
                 viewModel.onStartParkingClicked()
                 hasHandledGeofenceAction = true
             } else if (autoEnd) {
-                val locationName = uiState.savedLocations.firstOrNull { it.id == savedLocationId }?.name
-                val activeSession = uiState.activeParkings.firstOrNull { it.savedLocationName == locationName }
+                val activeSession = uiState.activeParkings.firstOrNull { it.savedLocationId == savedLocationId }
                 if (activeSession != null) {
                     viewModel.onEndParkingClicked(activeSession)
                 }
@@ -126,20 +132,79 @@ fun ParkingScreen(
         }
     }
 
+    var showLocationRationale by remember { mutableStateOf(false) }
+
+    fun loadGpsLocation() {
+        if (!isDeviceLocationEnabled(context)) {
+            viewModel.onLocationProblem(
+                "Localizzazione disattivata. Attivala per usare il GPS, oppure scegli il punto sulla mappa.",
+                LocationHelp.OPEN_LOCATION_SETTINGS
+            )
+            return
+        }
+        viewModel.onLocationRequested()
+        fetchCurrentLocation(
+            context = context,
+            onLocationLoaded = viewModel::onCurrentLocationLoaded,
+            onLocationError = viewModel::onLocationError
+        )
+    }
+
     val locationPermissionLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission()
         ) { isGranted ->
             if (isGranted) {
-                fetchCurrentLocation(
-                    context = context,
-                    onLocationLoaded = viewModel::onCurrentLocationLoaded,
-                    onLocationError = viewModel::onLocationError
+                loadGpsLocation()
+            } else if (!shouldShowLocationRationale(context)) {
+                // Dopo un rifiuto, "false" significa "non chiedere piu": serve passare dalle impostazioni.
+                viewModel.onLocationProblem(
+                    "Permesso posizione negato in modo permanente. Abilitalo dalle impostazioni dell'app, oppure scegli il punto sulla mappa.",
+                    LocationHelp.OPEN_APP_SETTINGS
                 )
             } else {
-                viewModel.onLocationError("Permesso posizione non concesso.")
+                viewModel.onLocationProblem(
+                    "Permesso posizione non concesso. Serve per registrare dove hai parcheggiato; puoi comunque scegliere il punto sulla mappa.",
+                    LocationHelp.NONE
+                )
             }
         }
+
+    fun onUseGpsClicked() {
+        when {
+            hasFineLocationPermission(context) -> loadGpsLocation()
+            shouldShowLocationRationale(context) -> showLocationRationale = true
+            else -> locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    // GPS come posizione predefinita: all'apertura, se il permesso c'e gia e non c'e ancora un punto.
+    LaunchedEffect(Unit) {
+        if (savedLocationId == -1 &&
+            uiState.latitude.isBlank() &&
+            hasFineLocationPermission(context) &&
+            isDeviceLocationEnabled(context)
+        ) {
+            loadGpsLocation()
+        }
+    }
+
+    if (showLocationRationale) {
+        AlertDialog(
+            onDismissRequest = { showLocationRationale = false },
+            title = { Text("Perche serve la posizione") },
+            text = { Text("ParkMate usa il GPS per salvare dove hai lasciato il veicolo. Puoi sempre scegliere il punto a mano sulla mappa.") },
+            confirmButton = {
+                Button(onClick = {
+                    showLocationRationale = false
+                    locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                }) { Text("Continua") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showLocationRationale = false }) { Text("Annulla") }
+            }
+        )
+    }
 
     val takePictureLauncher =
         rememberLauncherForActivityResult(
@@ -221,16 +286,20 @@ fun ParkingScreen(
         onLatitudeChanged = viewModel::onLatitudeChanged,
         onLongitudeChanged = viewModel::onLongitudeChanged,
         onSavedLocationSelected = viewModel::onSavedLocationSelected,
-        onUseCurrentLocationClicked = {
-            if (hasFineLocationPermission(context)) {
-                fetchCurrentLocation(
-                    context = context,
-                    onLocationLoaded = viewModel::onCurrentLocationLoaded,
-                    onLocationError = viewModel::onLocationError
+        onUseCurrentLocationClicked = ::onUseGpsClicked,
+        onMapPositionSelected = { position ->
+            viewModel.onMapPositionSelected(position.latitude, position.longitude)
+        },
+        onLocationHelpClicked = { help ->
+            val intent = when (help) {
+                LocationHelp.OPEN_LOCATION_SETTINGS -> Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                LocationHelp.OPEN_APP_SETTINGS -> Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.fromParts("package", context.packageName, null)
                 )
-            } else {
-                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                LocationHelp.NONE -> null
             }
+            intent?.let { context.startActivity(it) }
         },
         onTakePhotoClicked = ::startPhotoCapture,
         onRemovePhotoClicked = viewModel::onRemovePhotoClicked,
@@ -263,6 +332,8 @@ private fun ParkingContent(
     onLongitudeChanged: (String) -> Unit,
     onSavedLocationSelected: (Int?) -> Unit,
     onUseCurrentLocationClicked: () -> Unit,
+    onMapPositionSelected: (LatLng) -> Unit,
+    onLocationHelpClicked: (LocationHelp) -> Unit,
     onTakePhotoClicked: () -> Unit,
     onRemovePhotoClicked: () -> Unit,
     onEnableNotificationsClicked: () -> Unit,
@@ -379,19 +450,28 @@ private fun ParkingContent(
 
         Button(
             onClick = onUseCurrentLocationClicked,
+            enabled = !uiState.isLoadingLocation,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(text = "Usa posizione attuale")
+            Text(text = if (uiState.isLoadingLocation) "Recupero posizione..." else "Usa posizione attuale (GPS)")
+        }
+
+        if (uiState.locationHelp != LocationHelp.NONE) {
+            OutlinedButton(
+                onClick = { onLocationHelpClicked(uiState.locationHelp) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = uiState.locationHelp.label)
+            }
         }
 
         ParkingPositionPickerMap(
             latitude = uiState.latitude,
             longitude = uiState.longitude,
-            onPositionSelected = { position ->
-                onLatitudeChanged(position.latitude.toString())
-                onLongitudeChanged(position.longitude.toString())
-            }
+            onPositionSelected = onMapPositionSelected
         )
+
+        Text(text = "Origine posizione: ${uiState.locationSource.label}")
 
         OutlinedTextField(
             value = uiState.latitude,
@@ -592,9 +672,25 @@ private fun ParkingPositionPickerMap(
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(selectedPosition ?: defaultPosition, 14f)
     }
+    val markerState = rememberMarkerState(position = selectedPosition ?: defaultPosition)
+
+    // La mappa segue la posizione scelta da GPS, luogo salvato o campi di testo.
+    LaunchedEffect(selectedPosition) {
+        selectedPosition?.let { position ->
+            markerState.position = position
+            cameraPositionState.animate(CameraUpdateFactory.newLatLng(position))
+        }
+    }
+
+    // Fine del trascinamento: la posizione del marker diventa quella salvata.
+    LaunchedEffect(markerState.dragState) {
+        if (markerState.dragState == DragState.END) {
+            onPositionSelected(markerState.position)
+        }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(text = "Tocca la mappa per scegliere il punto del parcheggio")
+        Text(text = "Tocca la mappa o trascina il marker per regolare il punto del parcheggio")
 
         GoogleMap(
             modifier = Modifier
@@ -604,9 +700,10 @@ private fun ParkingPositionPickerMap(
             uiSettings = MapUiSettings(zoomControlsEnabled = true, myLocationButtonEnabled = false),
             onMapClick = onPositionSelected
         ) {
-            selectedPosition?.let { position ->
+            if (selectedPosition != null) {
                 Marker(
-                    state = MarkerState(position = position),
+                    state = markerState,
+                    draggable = true,
                     title = "Posizione parcheggio"
                 )
             }
@@ -757,6 +854,20 @@ private fun hasFineLocationPermission(context: Context): Boolean {
     return ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 }
 
+private fun shouldShowLocationRationale(context: Context): Boolean {
+    var current: Context = context
+    while (current is ContextWrapper) {
+        if (current is Activity) {
+            return ActivityCompat.shouldShowRequestPermissionRationale(
+                current,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+        }
+        current = current.baseContext
+    }
+    return false
+}
+
 private fun hasCameraPermission(context: Context): Boolean {
     return ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 }
@@ -766,25 +877,3 @@ private fun createParkingPhotoFile(context: Context): File {
     return File(photoDirectory, "parking_${System.currentTimeMillis()}.jpg")
 }
 
-@SuppressLint("MissingPermission")
-private fun fetchCurrentLocation(
-    context: Context,
-    onLocationLoaded: (Double, Double) -> Unit,
-    onLocationError: (String) -> Unit
-) {
-    val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
-    val cancellationTokenSource = CancellationTokenSource()
-
-    fusedLocationClient.getCurrentLocation(
-        Priority.PRIORITY_HIGH_ACCURACY,
-        cancellationTokenSource.token
-    ).addOnSuccessListener { location ->
-        if (location != null) {
-            onLocationLoaded(location.latitude, location.longitude)
-        } else {
-            onLocationError("Posizione non disponibile. Controlla GPS/emulatore.")
-        }
-    }.addOnFailureListener {
-        onLocationError("Errore durante il recupero della posizione.")
-    }
-}

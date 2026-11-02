@@ -36,6 +36,10 @@ data class ParkingSession(
     // Nome della saved location usata (null = GPS)
     val savedLocationName: String? = null,
 
+    // Id del luogo salvato usato (null = GPS/mappa/manuale). Niente FK: lo storico resta
+    // valido anche se il luogo viene eliminato; le coordinate sono copiate nella sosta.
+    val savedLocationId: Int? = null,
+
     // Hourly park
     val hourlyRate: Double? = null,
 

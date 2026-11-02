@@ -1,7 +1,6 @@
 package com.example.parkmatee.ui.map
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -30,17 +29,15 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.util.ParkingFormatters
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.maps.android.compose.Circle
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
+import com.example.parkmatee.util.fetchCurrentLocation
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
@@ -300,25 +297,3 @@ private fun hasFineLocationPermission(context: Context): Boolean {
     ) == PackageManager.PERMISSION_GRANTED
 }
 
-@SuppressLint("MissingPermission")
-private fun fetchCurrentLocation(
-    context: Context,
-    onLocationLoaded: (Double, Double) -> Unit,
-    onLocationError: (String) -> Unit
-) {
-    val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
-    val cancellationTokenSource = CancellationTokenSource()
-
-    fusedLocationClient.getCurrentLocation(
-        Priority.PRIORITY_HIGH_ACCURACY,
-        cancellationTokenSource.token
-    ).addOnSuccessListener { location ->
-        if (location != null) {
-            onLocationLoaded(location.latitude, location.longitude)
-        } else {
-            onLocationError("Posizione non disponibile. Controlla GPS/emulatore.")
-        }
-    }.addOnFailureListener {
-        onLocationError("Errore durante il recupero della posizione.")
-    }
-}

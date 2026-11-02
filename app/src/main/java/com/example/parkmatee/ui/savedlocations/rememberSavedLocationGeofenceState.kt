@@ -230,7 +230,7 @@ private fun notifyClosestSavedLocationStatus(
         val hasActiveParking = try {
             DatabaseProvider.getDatabase(context)
                 .parkingDao()
-                .getActiveSessionForSavedLocation(closestLocationStatus.savedLocation.name) != null
+                .getActiveSessionForSavedLocationId(closestLocationStatus.savedLocation.id) != null
         } catch (_: Exception) {
             false
         }

@@ -30,6 +30,9 @@ interface ParkingDao {
     @Query("SELECT * FROM parking_sessions WHERE savedLocationName = :savedLocationName AND endTime IS NULL LIMIT 1")
     suspend fun getActiveSessionForSavedLocation(savedLocationName: String): ParkingSession?
 
+    @Query("SELECT * FROM parking_sessions WHERE savedLocationId = :savedLocationId AND endTime IS NULL LIMIT 1")
+    suspend fun getActiveSessionForSavedLocationId(savedLocationId: Int): ParkingSession?
+
     // --- STORICO E STATISTICHE (HistoryScreen & StatsScreen) ---
     // Storico completo dei parcheggi terminati
     @Query("SELECT * FROM parking_sessions WHERE endTime IS NOT NULL ORDER BY startTime DESC")
