@@ -105,8 +105,9 @@ private fun HistoryContent(
     ) {
         Text(text = "Storico parcheggi", style = MaterialTheme.typography.titleLarge)
 
-        FiltersSection(
-            uiState = uiState,
+        HistoryFiltersSection(
+            vehicles = uiState.vehicles,
+            filters = uiState.filters,
             onTypeFilterSelected = onTypeFilterSelected,
             onVehicleFilterSelected = onVehicleFilterSelected,
             onRangeSelected = onRangeSelected,
@@ -173,9 +174,11 @@ private fun HistoryContent(
     }
 }
 
+/** Sezione filtri (tipo, intervallo, veicolo): condivisa tra Storico e Statistiche. */
 @Composable
-private fun FiltersSection(
-    uiState: HistoryUiState,
+internal fun HistoryFiltersSection(
+    vehicles: List<Vehicle>,
+    filters: HistoryFilters,
     onTypeFilterSelected: (HistoryTypeFilter) -> Unit,
     onVehicleFilterSelected: (Int?) -> Unit,
     onRangeSelected: (HistoryRange) -> Unit,
@@ -188,7 +191,7 @@ private fun FiltersSection(
         ) {
             HistoryTypeFilter.entries.forEach { filter ->
                 FilterChip(
-                    selected = uiState.filters.type == filter,
+                    selected = filters.type == filter,
                     onClick = { onTypeFilterSelected(filter) },
                     label = { Text(filter.label) }
                 )
@@ -201,7 +204,7 @@ private fun FiltersSection(
         ) {
             HistoryRange.entries.forEach { range ->
                 FilterChip(
-                    selected = uiState.filters.range == range,
+                    selected = filters.range == range,
                     onClick = { onRangeSelected(range) },
                     label = { Text(range.label) }
                 )
@@ -213,11 +216,11 @@ private fun FiltersSection(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             VehicleFilterDropdown(
-                vehicles = uiState.vehicles,
-                selectedVehicleId = uiState.filters.vehicleId,
+                vehicles = vehicles,
+                selectedVehicleId = filters.vehicleId,
                 onVehicleFilterSelected = onVehicleFilterSelected
             )
-            if (uiState.filters.isActive) {
+            if (filters.isActive) {
                 TextButton(onClick = onClearFilters) { Text("Azzera filtri") }
             }
         }

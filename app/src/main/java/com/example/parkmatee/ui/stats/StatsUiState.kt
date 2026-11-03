@@ -1,41 +1,20 @@
 package com.example.parkmatee.ui.stats
 
+import com.example.parkmatee.data.entity.ParkingSession
+import com.example.parkmatee.data.entity.ParkingType
+import com.example.parkmatee.data.entity.Vehicle
+import com.example.parkmatee.ui.history.HistoryFilters
+
 data class StatsUiState(
-    val totalCompletedParkings: Int = 0,
+    val isLoading: Boolean = true,
+    val vehicles: List<Vehicle> = emptyList(),
+    val filters: HistoryFilters = HistoryFilters(),
+    /** Soste terminate che rispettano i filtri: sorgente di tutte le visualizzazioni. */
+    val sessions: List<ParkingSession> = emptyList(),
     val totalCost: Double = 0.0,
-    val freeCount: Int = 0,
-    val hourlyCount: Int = 0,
-    val fixedCount: Int = 0,
     val averageDurationMinutes: Long = 0L,
     val longestDurationMinutes: Long = 0L,
-    val selectedPeriod: StatsPeriodFilter = StatsPeriodFilter.ALL,
-    val typeCountEntries: List<StatsChartEntry> = emptyList(),
-    val costByTypeEntries: List<StatsChartEntry> = emptyList(),
-    val durationByTypeEntries: List<StatsChartEntry> = emptyList(),
-    val dailyParkingEntries: List<StatsChartEntry> = emptyList(),
+    val costByType: Map<ParkingType, Double> = emptyMap(),
+    val countByType: Map<ParkingType, Int> = emptyMap(),
     val errorMessage: String? = null
-)
-
-enum class StatsPeriodFilter(
-    val label: String,
-    val days: Int?
-) {
-    ALL(
-        label = "Tutto",
-        days = null
-    ),
-    LAST_7_DAYS(
-        label = "7 giorni",
-        days = 7
-    ),
-    LAST_30_DAYS(
-        label = "30 giorni",
-        days = 30
-    )
-}
-
-data class StatsChartEntry(
-    val label: String,
-    val value: Double,
-    val displayValue: String
 )

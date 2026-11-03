@@ -1,235 +1,160 @@
 package com.example.parkmatee.ui.stats
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.data.entity.ParkingType
-import com.example.parkmatee.data.entity.costAt
 import com.example.parkmatee.data.repository.ParkingRepository
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.example.parkmatee.data.repository.VehicleRepository
+import com.example.parkmatee.ui.history.HistoryFilters
+import com.example.parkmatee.ui.history.HistoryRange
+import com.example.parkmatee.ui.history.HistoryTypeFilter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
-import kotlin.math.round
+import kotlinx.coroutines.launch
 
+/**
+ * Le soste arrivano gia filtrate da Room (veicolo, tipo, intervallo di inizio) con la stessa
+ * query dello storico, quindi i numeri delle due schermate coincidono. I filtri stanno nello
+ * [SavedStateHandle] e sopravvivono anche alla morte del processo.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
 class StatsViewModel(
-    private val parkingRepository: ParkingRepository
+    private val vehicleRepository: VehicleRepository,
+    private val parkingRepository: ParkingRepository,
+    private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
-    private val _selectedPeriod = MutableStateFlow(StatsPeriodFilter.ALL)
-    private val _errorMessage = MutableStateFlow<String?>(null)
-
-    // Combinazione reattiva dello storico DB, del filtro e dei messaggi d'errore
-    val uiState: StateFlow<StatsUiState> = combine(
-        parkingRepository.getParkingHistory(),
-        _selectedPeriod,
-        _errorMessage
-    ) { history, selectedPeriod, errorMessage ->
-        buildStats(
-            history = history,
-            selectedPeriod = selectedPeriod,
-            errorMessage = errorMessage
+    private val filters = combine(
+        savedStateHandle.getStateFlow(KEY_VEHICLE, NO_VEHICLE),
+        savedStateHandle.getStateFlow(KEY_TYPE, HistoryTypeFilter.ALL.name),
+        savedStateHandle.getStateFlow(KEY_RANGE, HistoryRange.ALL.name)
+    ) { vehicleId, type, range ->
+        HistoryFilters(
+            vehicleId = vehicleId.takeIf { it != NO_VEHICLE },
+            type = HistoryTypeFilter.fromName(type),
+            range = HistoryRange.fromName(range)
         )
-    }.catch { e ->
-        emit(
-            StatsUiState(
-                errorMessage = "Errore nel caricamento dello storico: ${e.localizedMessage}"
-            )
-        )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = StatsUiState()
-    )
-
-    fun onPeriodSelected(period: StatsPeriodFilter) {
-        _selectedPeriod.update { period }
-        _errorMessage.value = null
     }
 
-    private fun buildStats(
-        history: List<ParkingSession>,
-        selectedPeriod: StatsPeriodFilter,
-        errorMessage: String?
+    private val sessions = filters.flatMapLatest { f ->
+        parkingRepository.getFilteredHistory(
+            vehicleId = f.vehicleId,
+            type = f.type.type,
+            fromTime = f.range.fromMillis(System.currentTimeMillis()),
+            toTime = null
+        )
+    }
+
+    val uiState: StateFlow<StatsUiState> = combine(
+        vehicleRepository.getAllVehicles(),
+        sessions,
+        filters
+    ) { vehicles, list, f -> buildState(vehicles, list, f) }
+        .flowOn(Dispatchers.Default)
+        .catch { e ->
+            emit(
+                StatsUiState(
+                    isLoading = false,
+                    errorMessage = "Errore nel caricamento delle statistiche: ${e.localizedMessage}"
+                )
+            )
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUiState())
+
+    init {
+        // Se il veicolo filtrato viene eliminato, il filtro torna su "Tutti".
+        viewModelScope.launch {
+            vehicleRepository.getAllVehicles().collect { vehicles ->
+                val selected = savedStateHandle.get<Int>(KEY_VEHICLE) ?: NO_VEHICLE
+                if (selected != NO_VEHICLE && vehicles.none { it.id == selected }) {
+                    savedStateHandle[KEY_VEHICLE] = NO_VEHICLE
+                }
+            }
+        }
+    }
+
+    fun onTypeFilterSelected(filter: HistoryTypeFilter) {
+        savedStateHandle[KEY_TYPE] = filter.name
+    }
+
+    fun onVehicleFilterSelected(vehicleId: Int?) {
+        savedStateHandle[KEY_VEHICLE] = vehicleId ?: NO_VEHICLE
+    }
+
+    fun onRangeSelected(range: HistoryRange) {
+        savedStateHandle[KEY_RANGE] = range.name
+    }
+
+    fun onClearFilters() {
+        savedStateHandle[KEY_VEHICLE] = NO_VEHICLE
+        savedStateHandle[KEY_TYPE] = HistoryTypeFilter.ALL.name
+        savedStateHandle[KEY_RANGE] = HistoryRange.ALL.name
+    }
+
+    private fun buildState(
+        vehicles: List<com.example.parkmatee.data.entity.Vehicle>,
+        list: List<ParkingSession>,
+        f: HistoryFilters
     ): StatsUiState {
-        val completedParkings = history
-            .filter { session -> session.endTime != null }
-            .filterByPeriod(selectedPeriod)
-            .sortedBy { session -> session.endTime ?: session.startTime }
-
-        val durations = completedParkings.map { session -> session.durationMinutes() }
-
-        val freeSessions = completedParkings.filter { session -> session.type == ParkingType.FREE }
-        val hourlySessions = completedParkings.filter { session -> session.type == ParkingType.HOURLY }
-        val fixedSessions = completedParkings.filter { session -> session.type == ParkingType.FIXED }
-
-        val freeCost = roundToTwoDecimals(freeSessions.sumOf { session -> session.finalOrEstimatedCost() })
-        val hourlyCost = roundToTwoDecimals(hourlySessions.sumOf { session -> session.finalOrEstimatedCost() })
-        val fixedCost = roundToTwoDecimals(fixedSessions.sumOf { session -> session.finalOrEstimatedCost() })
-        val totalCost = roundToTwoDecimals(completedParkings.sumOf { session -> session.finalOrEstimatedCost() })
-
-        val typeCountEntries = listOf(
-            StatsChartEntry(
-                label = "Gratis",
-                value = freeSessions.size.toDouble(),
-                displayValue = freeSessions.size.toString()
-            ),
-            StatsChartEntry(
-                label = "Ore",
-                value = hourlySessions.size.toDouble(),
-                displayValue = hourlySessions.size.toString()
-            ),
-            StatsChartEntry(
-                label = "Ticket",
-                value = fixedSessions.size.toDouble(),
-                displayValue = fixedSessions.size.toString()
-            )
-        )
-
-        val costByTypeEntries = listOf(
-            StatsChartEntry(
-                label = "Gratis",
-                value = freeCost,
-                displayValue = formatCost(freeCost)
-            ),
-            StatsChartEntry(
-                label = "Ore",
-                value = hourlyCost,
-                displayValue = formatCost(hourlyCost)
-            ),
-            StatsChartEntry(
-                label = "Ticket",
-                value = fixedCost,
-                displayValue = formatCost(fixedCost)
-            )
-        )
-
-        val durationByTypeEntries = listOf(
-            buildAverageDurationEntry(label = "Gratis", sessions = freeSessions),
-            buildAverageDurationEntry(label = "Ore", sessions = hourlySessions),
-            buildAverageDurationEntry(label = "Ticket", sessions = fixedSessions)
-        )
+        val durations = list.map { session ->
+            val end = session.endTime ?: session.startTime
+            ((end - session.startTime) / MILLIS_PER_MINUTE).coerceAtLeast(0L)
+        }
+        val costByType = ParkingType.entries.associateWith { type ->
+            list.filter { it.type == type }.sumOf { it.statsCost() }.roundCents()
+        }
+        val countByType = ParkingType.entries.associateWith { type -> list.count { it.type == type } }
 
         return StatsUiState(
-            totalCompletedParkings = completedParkings.size,
-            totalCost = totalCost,
+            isLoading = false,
+            vehicles = vehicles,
+            filters = f,
+            sessions = list,
+            totalCost = list.sumOf { it.statsCost() }.roundCents(),
             averageDurationMinutes = if (durations.isEmpty()) 0L else durations.sum() / durations.size,
             longestDurationMinutes = durations.maxOrNull() ?: 0L,
-            selectedPeriod = selectedPeriod,
-            typeCountEntries = typeCountEntries,
-            costByTypeEntries = costByTypeEntries,
-            durationByTypeEntries = durationByTypeEntries,
-            dailyParkingEntries = buildDailyEntries(completedParkings),
-            errorMessage = errorMessage
+            costByType = costByType,
+            countByType = countByType
         )
     }
 
-    private fun List<ParkingSession>.filterByPeriod(
-        selectedPeriod: StatsPeriodFilter
-    ): List<ParkingSession> {
-        val days = selectedPeriod.days ?: return this
-        val startMillis = System.currentTimeMillis() - days.toLong() * MILLIS_PER_DAY
-
-        return filter { session ->
-            val endTime = session.endTime ?: return@filter false
-            endTime >= startMillis
-        }
-    }
-
-    private fun buildAverageDurationEntry(
-        label: String,
-        sessions: List<ParkingSession>
-    ): StatsChartEntry {
-        val averageDuration = if (sessions.isEmpty()) {
-            0L
-        } else {
-            sessions.sumOf { session -> session.durationMinutes() } / sessions.size
-        }
-
-        return StatsChartEntry(
-            label = label,
-            value = averageDuration.toDouble(),
-            displayValue = formatDuration(averageDuration)
-        )
-    }
-
-    private fun buildDailyEntries(
-        completedParkings: List<ParkingSession>
-    ): List<StatsChartEntry> {
-        val sortFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-        val displayFormatter = SimpleDateFormat("dd/MM", Locale.getDefault())
-
-        val groupedMap = completedParkings.groupBy { session ->
-            sortFormatter.format(Date(session.endTime ?: session.startTime))
-        }
-
-        val sortedKeys = groupedMap.keys.sorted()
-        val startIndex = (sortedKeys.size - MAX_DAILY_ENTRIES).coerceAtLeast(0)
-        val visibleKeys = sortedKeys.subList(startIndex, sortedKeys.size)
-
-        return visibleKeys.map { key ->
-            val sessionsInDay = groupedMap[key] ?: emptyList()
-            val dateObj = sortFormatter.parse(key) ?: Date()
-
-            StatsChartEntry(
-                label = displayFormatter.format(dateObj),
-                value = sessionsInDay.size.toDouble(),
-                displayValue = sessionsInDay.size.toString()
-            )
-        }
-    }
-
-    private fun ParkingSession.durationMinutes(): Long {
-        val endTime = endTime ?: return 0L
-        return ((endTime - startTime) / MILLIS_PER_MINUTE).coerceAtLeast(0L)
-    }
-
-    private fun ParkingSession.finalOrEstimatedCost(): Double =
-        finalCost ?: costAt(endTime ?: startTime)
-
-    private fun roundToTwoDecimals(value: Double): Double {
-        return round(value * 100.0) / 100.0
-    }
+    private fun Double.roundCents(): Double = Math.round(this * 100.0) / 100.0
 
     class Factory(
+        private val vehicleRepository: VehicleRepository,
         private val parkingRepository: ParkingRepository
     ) : ViewModelProvider.Factory {
 
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
             if (modelClass.isAssignableFrom(StatsViewModel::class.java)) {
                 @Suppress("UNCHECKED_CAST")
-                return StatsViewModel(parkingRepository = parkingRepository) as T
+                return StatsViewModel(
+                    vehicleRepository = vehicleRepository,
+                    parkingRepository = parkingRepository,
+                    savedStateHandle = extras.createSavedStateHandle()
+                ) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }
     }
 
-    companion object {
-        private const val MILLIS_PER_MINUTE = 60_000L
-        private const val MILLIS_PER_DAY = 24 * 60 * 60 * 1_000L
-        private const val MINUTES_PER_HOUR = 60.0
-        private const val MAX_DAILY_ENTRIES = 7
-    }
-}
-
-private fun formatCost(cost: Double): String {
-    return String.format(Locale.getDefault(), "%.2f €", cost)
-}
-
-private fun formatDuration(minutes: Long): String {
-    val hours = minutes / 60
-    val remainingMinutes = minutes % 60
-
-    return if (hours > 0) {
-        "${hours}h ${remainingMinutes}min"
-    } else {
-        "${remainingMinutes}min"
+    private companion object {
+        const val MILLIS_PER_MINUTE = 60_000L
+        const val KEY_VEHICLE = "stats_vehicle_id"
+        const val KEY_TYPE = "stats_type"
+        const val KEY_RANGE = "stats_range"
+        const val NO_VEHICLE = -1
     }
 }

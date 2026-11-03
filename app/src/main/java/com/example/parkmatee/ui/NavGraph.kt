@@ -85,6 +85,7 @@ fun ParkMateNavGraph(
 
     val statsViewModel: StatsViewModel = viewModel(
         factory = StatsViewModel.Factory(
+            vehicleRepository = vehicleRepository,
             parkingRepository = parkingRepository
         )
     )
