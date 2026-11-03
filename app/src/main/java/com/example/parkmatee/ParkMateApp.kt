@@ -23,7 +23,7 @@ class AppContainer(application: Application) {
     val alarmScheduler by lazy { ParkingAlarmScheduler(application) }
     val workScheduler by lazy { ParkingWorkScheduler(application) }
     val sessionService by lazy {
-        ParkingSessionService(application, parkingRepository, alarmScheduler, workScheduler)
+        ParkingSessionService(application, parkingRepository, vehicleRepository, alarmScheduler, workScheduler)
     }
 }
 

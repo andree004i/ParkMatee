@@ -28,6 +28,7 @@ object NotificationConstants {
     const val ACTIVE_REMINDER_NOTIFICATION_BASE_ID = 20_000
     const val EXPIRING_NOTIFICATION_BASE_ID = 30_000
     const val EXPIRED_NOTIFICATION_BASE_ID = 40_000
+    const val SESSION_ENDED_NOTIFICATION_BASE_ID = 60_000
 
     /** Extra dell'intent di apertura: id della sosta a cui si riferisce la notifica. */
     const val EXTRA_OPEN_SESSION_ID = "extra_open_session_id"

@@ -65,6 +65,7 @@ fun SavedLocationScreen(
     var pendingGeofenceLocation by remember { mutableStateOf<SavedLocation?>(null) }
     var permissionRefreshKey by remember { mutableLongStateOf(0L) }
     var geofencePermissionWarning by remember { mutableStateOf<String?>(null) }
+    var showBackgroundRationale by remember { mutableStateOf(false) }
     val deleteRequest by viewModel.deleteRequest.collectAsState()
 
     // Flag per garantire che il deep-link/notifica venga gestito UNA SOLA VOLTA
@@ -130,9 +131,7 @@ fun SavedLocationScreen(
             pendingGeofenceLocation = null
         } else if (location != null) {
             if (needsBackgroundLocationPermission(context)) {
-                backgroundLocationPermissionLauncher.launch(
-                    Manifest.permission.ACCESS_BACKGROUND_LOCATION
-                )
+                showBackgroundRationale = true
             } else {
                 enableGeofenceIfPossible(location)
             }
@@ -147,6 +146,11 @@ fun SavedLocationScreen(
     }
 
     fun requestGeofencePermissionsFor(location: SavedLocation) {
+        if (locations.count { it.geofenceEnabled } >= MAX_SAVED_LOCATION_GEOFENCES) {
+            geofencePermissionWarning =
+                "Hai raggiunto il limite di $MAX_SAVED_LOCATION_GEOFENCES geofence attivi: disattivane uno per attivarne un altro."
+            return
+        }
         pendingGeofenceLocation = location
 
         if (!hasFineLocationPermission(context)) {
@@ -157,9 +161,7 @@ fun SavedLocationScreen(
         }
 
         if (needsBackgroundLocationPermission(context)) {
-            backgroundLocationPermissionLauncher.launch(
-                Manifest.permission.ACCESS_BACKGROUND_LOCATION
-            )
+            showBackgroundRationale = true
             return
         }
 
@@ -174,6 +176,39 @@ fun SavedLocationScreen(
         } else {
             refreshPermissions()
         }
+    }
+
+    // Spiegazione PRIMA della richiesta della posizione in background
+    if (showBackgroundRationale) {
+        AlertDialog(
+            onDismissRequest = {
+                showBackgroundRationale = false
+                pendingGeofenceLocation = null
+            },
+            title = { Text("Posizione anche in background") },
+            text = {
+                Text(
+                    "Per avvisarti quando arrivi o esci da un luogo salvato anche con l'app chiusa, " +
+                        "ParkMate ha bisogno della posizione \"Consenti sempre\". " +
+                        "Nella schermata successiva scegli \"Consenti sempre\". " +
+                        "La posizione resta sul dispositivo e non viene condivisa."
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    showBackgroundRationale = false
+                    backgroundLocationPermissionLauncher.launch(
+                        Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                    )
+                }) { Text("Continua") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = {
+                    showBackgroundRationale = false
+                    pendingGeofenceLocation = null
+                }) { Text("Annulla") }
+            }
+        )
     }
 
     Scaffold(
@@ -316,8 +351,8 @@ private fun SavedLocationGeofenceSection(
             )
             Text(text = geofenceUiState.message)
             Text(text = "Luoghi monitorati: ${geofenceUiState.monitoredCount}")
-            Text(text = "Entrata: propone di avviare un parcheggio.")
-            Text(text = "Uscita: propone di terminare il parcheggio rilevante.")
+            Text(text = "Permanenza nell'area (30 s): propone di avviare la sosta, indicando il veicolo.")
+            Text(text = "Uscita: propone di terminare la sosta; l'azione funziona anche senza aprire l'app.")
 
             permissionWarning?.let { warning ->
                 Text(text = warning)

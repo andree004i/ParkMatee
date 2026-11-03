@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Build
@@ -16,7 +17,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
-import com.example.parkmatee.data.db.DatabaseProvider
 import com.example.parkmatee.data.entity.SavedLocation
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
@@ -209,22 +209,17 @@ private fun notifyClosestSavedLocationStatus(
         ?: return
 
     CoroutineScope(Dispatchers.IO).launch {
-        val hasActiveParking = try {
-            DatabaseProvider.getDatabase(context)
-                .parkingDao()
-                .getActiveSessionForSavedLocationId(closestLocationStatus.savedLocation.id) != null
+        try {
+            SavedLocationGeofenceBroadcastReceiver.showSavedLocationStatusNotification(
+                context = context,
+                savedLocationId = closestLocationStatus.savedLocation.id,
+                locationName = closestLocationStatus.savedLocation.name,
+                isInside = closestLocationStatus.isInside,
+                distanceMeters = closestLocationStatus.distanceMeters
+            )
         } catch (_: Exception) {
-            false
+            // notifica di sola cortesia: un errore qui non deve far fallire il geofencing
         }
-
-        SavedLocationGeofenceBroadcastReceiver.showSavedLocationStatusNotification(
-            context = context,
-            savedLocationId = closestLocationStatus.savedLocation.id,
-            locationName = closestLocationStatus.savedLocation.name,
-            isInside = closestLocationStatus.isInside,
-            distanceMeters = closestLocationStatus.distanceMeters,
-            hasActiveParking = hasActiveParking
-        )
     }
 }
 
@@ -253,7 +248,8 @@ private data class SavedLocationDistanceStatus(
 )
 
 internal fun createSavedLocationGeofence(
-    location: SavedLocation
+    location: SavedLocation,
+    responsivenessMillis: Int
 ): Geofence {
     return Geofence.Builder()
         .setRequestId(SavedLocationGeofenceRequestId.encode(location))
@@ -262,14 +258,25 @@ internal fun createSavedLocationGeofence(
             location.longitude,
             location.geofenceRadiusMeters
         )
+        // DWELL (permanenza nell'area) al posto di ENTER: passare in macchina vicino al luogo
+        // non propone di avviare una sosta. EXIT propone di terminarla.
         .setTransitionTypes(
-            Geofence.GEOFENCE_TRANSITION_ENTER or
+            Geofence.GEOFENCE_TRANSITION_DWELL or
                     Geofence.GEOFENCE_TRANSITION_EXIT
         )
-        // Risposta piu rapida possibile (a scapito della batteria): utile per il demo.
-        .setNotificationResponsiveness(0)
+        .setLoiteringDelay(LOITERING_DELAY_MILLIS)
+        .setNotificationResponsiveness(responsivenessMillis)
         .setExpirationDuration(Geofence.NEVER_EXPIRE)
         .build()
+}
+
+/** Secondi di permanenza nell'area prima che scatti DWELL. */
+private const val LOITERING_DELAY_MILLIS = 30_000
+
+/** Reattivita massima (e consumo massimo) solo nelle build di debug, utile per la demo. */
+internal fun geofenceResponsivenessMillis(context: Context): Int {
+    val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    return if (debuggable) 0 else 60_000
 }
 
 internal fun createSavedLocationGeofencePendingIntent(

@@ -118,19 +118,23 @@ fun ParkingScreen(
         mutableStateOf(false)
     }
 
-    LaunchedEffect(savedLocationId, autoStart, autoEnd, uiState.savedLocations) {
+    // Si agisce solo quando i dati servono davvero sono stati caricati (luoghi, veicoli, soste),
+    // e l'azione e segnata come gestita solo dopo essere stata eseguita.
+    LaunchedEffect(
+        savedLocationId, autoStart, autoEnd,
+        uiState.savedLocations, uiState.vehicles, uiState.activeParkings
+    ) {
         if (savedLocationId != -1 && !hasHandledGeofenceAction && uiState.savedLocations.isNotEmpty()) {
-            viewModel.onSavedLocationSelected(savedLocationId)
-
-            if (autoStart) {
+            if (autoStart && uiState.vehicles.isNotEmpty()) {
+                viewModel.onSavedLocationSelected(savedLocationId)
                 viewModel.onStartParkingClicked()
                 hasHandledGeofenceAction = true
             } else if (autoEnd) {
                 val activeSession = uiState.activeParkings.firstOrNull { it.savedLocationId == savedLocationId }
                 if (activeSession != null) {
                     viewModel.onEndParkingClicked(activeSession)
+                    hasHandledGeofenceAction = true
                 }
-                hasHandledGeofenceAction = true
             }
         }
     }

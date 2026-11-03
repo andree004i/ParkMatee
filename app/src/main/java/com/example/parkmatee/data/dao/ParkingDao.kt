@@ -41,6 +41,9 @@ abstract class ParkingDao {
     @Query("SELECT * FROM parking_sessions WHERE savedLocationName = :savedLocationName AND endTime IS NULL LIMIT 1")
     abstract suspend fun getActiveSessionForSavedLocation(savedLocationName: String): ParkingSession?
 
+    @Query("SELECT * FROM parking_sessions WHERE savedLocationId = :savedLocationId AND endTime IS NULL ORDER BY startTime DESC")
+    abstract suspend fun getActiveSessionsForSavedLocationId(savedLocationId: Int): List<ParkingSession>
+
     @Query("SELECT * FROM parking_sessions WHERE savedLocationId = :savedLocationId AND endTime IS NULL LIMIT 1")
     abstract suspend fun getActiveSessionForSavedLocationId(savedLocationId: Int): ParkingSession?
 

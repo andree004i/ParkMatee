@@ -48,6 +48,9 @@ class ParkingRepository(
     ): ParkingSession? =
         parkingDao.getActiveSessionForSavedLocation(savedLocationName)
 
+    suspend fun getActiveSessionsForSavedLocationId(savedLocationId: Int): List<ParkingSession> =
+        parkingDao.getActiveSessionsForSavedLocationId(savedLocationId)
+
     suspend fun startParking(
         session: ParkingSession
     ): Long {

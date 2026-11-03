@@ -17,6 +17,9 @@ interface SavedLocationDao {
     @Query("SELECT COUNT(*) FROM saved_locations WHERE LOWER(name) = LOWER(:name) AND id != :excludeId")
     suspend fun countByName(name: String, excludeId: Int): Int
 
+    @Query("SELECT * FROM saved_locations WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Int): SavedLocation?
+
     @Insert
     suspend fun insert(location: SavedLocation)
 

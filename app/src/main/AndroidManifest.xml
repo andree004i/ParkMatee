@@ -42,6 +42,11 @@
             android:name=".ui.savedlocations.SavedLocationGeofenceBroadcastReceiver"
             android:exported="false" />
 
+        <!-- Azioni "Avvia/Termina sosta" delle notifiche del geofence -->
+        <receiver
+            android:name=".ui.savedlocations.GeofenceActionReceiver"
+            android:exported="false" />
+
         <!-- Receiver Scadenza Allarmi Ticket (AlarmManager) -->
         <receiver
             android:name=".notification.TicketAlarmReceiver"
