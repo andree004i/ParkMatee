@@ -304,6 +304,10 @@ class ParkingViewModel(
             null
         }
 
+        // Se il ticket scade prima dell'anticipo scelto, l'avviso anticipato non ha senso: lo si dice.
+        val warningSkipped = expiryTime != null &&
+            expiryTime - startTime <= effectiveState.warningMinutes * MILLIS_PER_MINUTE
+
         val session = ParkingSession(
             vehicleId = finalVehicleId,
             type = effectiveState.selectedType,
@@ -331,7 +335,9 @@ class ParkingViewModel(
                     context = application,
                     notificationId = NotificationConstants.START_NOTIFICATION_BASE_ID + newSessionId,
                     title = "Parcheggio attivo",
-                    text = "Hai avviato un nuovo parcheggio. Ricordati di terminarlo quando riparti."
+                    text = "Hai avviato un nuovo parcheggio. Ricordati di terminarlo quando riparti.",
+                    sessionId = newSessionId,
+                    withEndAction = true
                 )
 
                 workScheduler.schedulePeriodicReminder(newSessionId, startTime)
@@ -360,7 +366,11 @@ class ParkingViewModel(
                         photoPath = null,
                         note = "",
                         errorMessage = null,
-                        successMessage = "Parcheggio avviato correttamente."
+                        successMessage = if (warningSkipped) {
+                            "Parcheggio avviato. Preavviso non programmato: la scadenza e troppo vicina."
+                        } else {
+                            "Parcheggio avviato correttamente."
+                        }
                     )
                 }
             } catch (exception: Exception) {

@@ -42,6 +42,7 @@ fun MainScreen(
                 is GeofenceIntentAction.EndParking -> {
                     "${Routes.PARKING}?savedLocationId=${pendingGeofenceAction.savedLocationId}&autoEnd=true"
                 }
+                is GeofenceIntentAction.OpenSession -> Routes.PARKING
                 is GeofenceIntentAction.OpenLocation -> {
                     "${Routes.SAVED_LOCATIONS}?savedLocationId=${pendingGeofenceAction.savedLocationId}"
                 }

@@ -21,11 +21,13 @@ class ParkingWorkScheduler(context: Context) {
             15, TimeUnit.MINUTES
         )
             .setInputData(inputData)
+            // Senza ritardo iniziale il primo promemoria partirebbe subito ("attivo da 0 min").
+            .setInitialDelay(15, TimeUnit.MINUTES)
             .build()
 
         workManager.enqueueUniquePeriodicWork(
             "parking_reminder_$sessionId",
-            ExistingPeriodicWorkPolicy.UPDATE,
+            ExistingPeriodicWorkPolicy.KEEP,
             workRequest
         )
     }

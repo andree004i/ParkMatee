@@ -47,6 +47,11 @@
             android:name=".notification.TicketAlarmReceiver"
             android:exported="false" />
 
+        <!-- Azione "Termina sosta" delle notifiche -->
+        <receiver
+            android:name=".notification.NotificationActionReceiver"
+            android:exported="false" />
+
         <!-- Receiver Ripristino Allarmi al Riavvio del Dispositivo -->
         <receiver
             android:name=".notification.BootReceiver"
@@ -54,6 +59,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
 

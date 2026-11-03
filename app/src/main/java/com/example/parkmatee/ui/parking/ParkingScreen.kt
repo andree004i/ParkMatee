@@ -448,7 +448,7 @@ private fun ParkingContent(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(text = "Permesso allarmi esatti disattivato")
-                    Text(text = "Per ricevere la notifica di scadenza al secondo esatto, abilita il permesso 'Allarmi e promemoria' nelle impostazioni.")
+                    Text(text = "Senza questo permesso l'avviso di scadenza usa una sveglia di sistema (icona della sveglia nella barra di stato) e il preavviso puo arrivare con qualche minuto di ritardo. Per il comportamento ideale abilita 'Allarmi e promemoria' nelle impostazioni.")
                     Button(
                         onClick = onRequestExactAlarmPermission,
                         modifier = Modifier.fillMaxWidth()

@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import com.example.parkmatee.notification.NotificationConstants
 import com.example.parkmatee.ui.MainScreen
 import com.example.parkmatee.ui.theme.ParkMateeTheme
 
@@ -15,6 +16,9 @@ sealed class GeofenceIntentAction {
     data class StartParking(val savedLocationId: Int) : GeofenceIntentAction()
     data class EndParking(val savedLocationId: Int) : GeofenceIntentAction()
     data class OpenLocation(val savedLocationId: Int) : GeofenceIntentAction()
+
+    /** Tocco su una notifica di sosta (promemoria o scadenza): apre la schermata Park. */
+    data class OpenSession(val sessionId: Int) : GeofenceIntentAction()
 }
 
 class MainActivity : ComponentActivity() {
@@ -50,6 +54,13 @@ class MainActivity : ComponentActivity() {
 
     private fun handleGeofenceIntent(intent: Intent?) {
         if (intent == null) return
+
+        val openSessionId = intent.getIntExtra(NotificationConstants.EXTRA_OPEN_SESSION_ID, -1)
+        if (openSessionId != -1) {
+            pendingGeofenceAction.value = GeofenceIntentAction.OpenSession(openSessionId)
+            intent.removeExtra(NotificationConstants.EXTRA_OPEN_SESSION_ID)
+            return
+        }
 
         val savedLocationId = intent.getIntExtra("EXTRA_SAVED_LOCATION_ID", -1)
         val geofenceAction = intent.getStringExtra("EXTRA_GEOFENCE_ACTION")

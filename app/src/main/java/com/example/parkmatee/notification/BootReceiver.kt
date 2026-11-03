@@ -14,8 +14,13 @@ import kotlinx.coroutines.launch
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED ||
-            intent.action == Intent.ACTION_MY_PACKAGE_REPLACED
+        val action = intent.action
+        // ACTION_EXACT_PERMISSION: l'utente ha concesso "Allarmi e promemoria" dopo l'avvio di una
+        // sosta; gli allarmi gia programmati (meno precisi) vanno riprogrammati come esatti.
+        val isPermissionChange = action == ACTION_EXACT_PERMISSION
+        if (action == Intent.ACTION_BOOT_COMPLETED ||
+            action == Intent.ACTION_MY_PACKAGE_REPLACED ||
+            isPermissionChange
         ) {
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
@@ -26,7 +31,7 @@ class BootReceiver : BroadcastReceiver() {
                     val workScheduler = container.workScheduler
 
                     // Play Services cancella i geofence al riavvio e dopo un aggiornamento dell'app.
-                    try {
+                    if (!isPermissionChange) try {
                         val locations = container.savedLocationRepository.getAllLocations().first()
                         registerEnabledSavedLocationGeofences(context, locations)?.let { Tasks.await(it) }
                     } catch (e: Exception) {
@@ -48,6 +53,10 @@ class BootReceiver : BroadcastReceiver() {
                                     expiryTimeMillis = expiry,
                                     warningMinutes = session.warningMinutes
                                 )
+                            } else if (!isPermissionChange) {
+                                // Il ticket e scaduto mentre il dispositivo era spento: l'allarme
+                                // e andato perso, quindi avvisiamo ora.
+                                showTicketExpiredNotification(context, session)
                             }
                         }
                     }
@@ -58,5 +67,10 @@ class BootReceiver : BroadcastReceiver() {
                 }
             }
         }
+    }
+
+    companion object {
+        private const val ACTION_EXACT_PERMISSION =
+            "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED"
     }
 }

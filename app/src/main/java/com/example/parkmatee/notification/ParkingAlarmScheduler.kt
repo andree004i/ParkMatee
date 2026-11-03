@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import com.example.parkmatee.MainActivity
 
 class ParkingAlarmScheduler(private val context: Context) {
 
@@ -45,7 +46,7 @@ class ParkingAlarmScheduler(private val context: Context) {
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            setSafeAlarm(warningTime, pendingIntent)
+            scheduleWarningAlarm(warningTime, pendingIntent)
         }
 
         if (expiryTimeMillis > now) {
@@ -59,20 +60,37 @@ class ParkingAlarmScheduler(private val context: Context) {
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            setSafeAlarm(expiryTimeMillis, pendingIntent)
+            scheduleExpiryAlarm(expiryTimeMillis, pendingIntent)
         }
     }
 
+    /** Avviso anticipato: esatto se possibile, altrimenti il piu preciso consentito (anche in Doze). */
     @SuppressLint("ScheduleExactAlarm")
-    private fun setSafeAlarm(timeMillis: Long, pendingIntent: PendingIntent) {
+    private fun scheduleWarningAlarm(timeMillis: Long, pendingIntent: PendingIntent) {
         if (canScheduleExact()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeMillis, pendingIntent)
-            } else {
-                alarmManager.setExact(AlarmManager.RTC_WAKEUP, timeMillis, pendingIntent)
-            }
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeMillis, pendingIntent)
         } else {
-            alarmManager.set(AlarmManager.RTC_WAKEUP, timeMillis, pendingIntent)
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeMillis, pendingIntent)
+        }
+    }
+
+    /**
+     * Avviso di scadenza (obbligatorio, istante esatto). Senza il permesso SCHEDULE_EXACT_ALARM si
+     * usa setAlarmClock: e esatto, non richiede permessi e sveglia il dispositivo da Doze, ma il
+     * sistema mostra l'icona della sveglia nella barra di stato.
+     */
+    @SuppressLint("ScheduleExactAlarm")
+    private fun scheduleExpiryAlarm(timeMillis: Long, pendingIntent: PendingIntent) {
+        if (canScheduleExact()) {
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeMillis, pendingIntent)
+        } else {
+            val showIntent = PendingIntent.getActivity(
+                context,
+                0,
+                Intent(context, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(timeMillis, showIntent), pendingIntent)
         }
     }
 
