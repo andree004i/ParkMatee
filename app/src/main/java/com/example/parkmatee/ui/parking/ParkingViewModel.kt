@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.parkmatee.ParkingSessionService
 import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.data.entity.ParkingType
 import com.example.parkmatee.data.repository.ParkingRepository
@@ -29,7 +30,8 @@ class ParkingViewModel(
     private val parkingRepository: ParkingRepository,
     private val savedLocationRepository: SavedLocationRepository,
     private val alarmScheduler: ParkingAlarmScheduler,
-    private val workScheduler: ParkingWorkScheduler
+    private val workScheduler: ParkingWorkScheduler,
+    private val sessionService: ParkingSessionService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ParkingUiState())
@@ -104,8 +106,7 @@ class ParkingViewModel(
     fun onEndParkingClicked(session: ParkingSession) {
         viewModelScope.launch {
             try {
-                parkingRepository.endParking(session)
-                cancelSessionJobs(session.id)
+                sessionService.endSession(session)
 
                 _uiState.update {
                     it.copy(
@@ -125,11 +126,7 @@ class ParkingViewModel(
     }
 
     /** Worker, allarmi e notifiche gia mostrate di una sosta chiusa o sostituita. */
-    private fun cancelSessionJobs(sessionId: Int) {
-        workScheduler.cancelPeriodicReminder(sessionId)
-        alarmScheduler.cancelTicketAlarms(sessionId)
-        cancelSessionNotifications(application, sessionId)
-    }
+    private fun cancelSessionJobs(sessionId: Int) = sessionService.cancelJobs(sessionId)
 
     fun onVehicleSelected(vehicleId: Int) {
         _uiState.update { it.copy(selectedVehicleId = vehicleId, errorMessage = null, successMessage = null) }
@@ -407,7 +404,8 @@ class ParkingViewModel(
         private val parkingRepository: ParkingRepository,
         private val savedLocationRepository: SavedLocationRepository,
         private val alarmScheduler: ParkingAlarmScheduler,
-        private val workScheduler: ParkingWorkScheduler
+        private val workScheduler: ParkingWorkScheduler,
+        private val sessionService: ParkingSessionService
     ) : ViewModelProvider.Factory {
 
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -419,7 +417,8 @@ class ParkingViewModel(
                     parkingRepository = parkingRepository,
                     savedLocationRepository = savedLocationRepository,
                     alarmScheduler = alarmScheduler,
-                    workScheduler = workScheduler
+                    workScheduler = workScheduler,
+                    sessionService = sessionService
                 ) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

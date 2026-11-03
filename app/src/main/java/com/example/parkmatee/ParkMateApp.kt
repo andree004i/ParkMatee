@@ -22,6 +22,9 @@ class AppContainer(application: Application) {
     val savedLocationRepository by lazy { SavedLocationRepository(database.savedLocationDao()) }
     val alarmScheduler by lazy { ParkingAlarmScheduler(application) }
     val workScheduler by lazy { ParkingWorkScheduler(application) }
+    val sessionService by lazy {
+        ParkingSessionService(application, parkingRepository, alarmScheduler, workScheduler)
+    }
 }
 
 class ParkMateApp : Application() {

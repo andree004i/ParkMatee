@@ -3,6 +3,8 @@ package com.example.parkmatee.ui.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.parkmatee.ParkingSessionService
+import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.data.repository.ParkingRepository
 import com.example.parkmatee.data.repository.SavedLocationRepository
 import com.example.parkmatee.data.repository.VehicleRepository
@@ -15,7 +17,8 @@ import kotlinx.coroutines.launch
 class MapViewModel(
     private val vehicleRepository: VehicleRepository,
     private val parkingRepository: ParkingRepository,
-    private val savedLocationRepository: SavedLocationRepository
+    private val savedLocationRepository: SavedLocationRepository,
+    private val sessionService: ParkingSessionService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MapUiState())
@@ -57,6 +60,17 @@ class MapViewModel(
         }
     }
 
+    /** Chiude la sosta dalla mappa: stessa logica della schermata Parcheggio. */
+    fun onEndParkingClicked(session: ParkingSession) {
+        viewModelScope.launch {
+            try {
+                sessionService.endSession(session)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Errore durante la chiusura del parcheggio.") }
+            }
+        }
+    }
+
     fun onUserLocationLoaded(
         latitude: Double,
         longitude: Double
@@ -81,7 +95,8 @@ class MapViewModel(
     class Factory(
         private val vehicleRepository: VehicleRepository,
         private val parkingRepository: ParkingRepository,
-        private val savedLocationRepository: SavedLocationRepository
+        private val savedLocationRepository: SavedLocationRepository,
+        private val sessionService: ParkingSessionService
     ) : ViewModelProvider.Factory {
 
         override fun <T : ViewModel> create(
@@ -92,7 +107,8 @@ class MapViewModel(
                 return MapViewModel(
                     vehicleRepository = vehicleRepository,
                     parkingRepository = parkingRepository,
-                    savedLocationRepository = savedLocationRepository
+                    savedLocationRepository = savedLocationRepository,
+                    sessionService = sessionService
                 ) as T
             }
 

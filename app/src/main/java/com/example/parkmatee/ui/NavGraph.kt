@@ -64,7 +64,8 @@ fun ParkMateNavGraph(
             parkingRepository = parkingRepository,
             savedLocationRepository = savedLocationRepository,
             alarmScheduler = alarmScheduler,
-            workScheduler = workScheduler
+            workScheduler = workScheduler,
+            sessionService = container.sessionService
         )
     )
 
@@ -92,7 +93,8 @@ fun ParkMateNavGraph(
         factory = MapViewModel.Factory(
             vehicleRepository = vehicleRepository,
             parkingRepository = parkingRepository,
-            savedLocationRepository = savedLocationRepository
+            savedLocationRepository = savedLocationRepository,
+            sessionService = container.sessionService
         )
     )
 
@@ -157,7 +159,14 @@ fun ParkMateNavGraph(
 
         composable(Routes.MAP) {
             MapScreen(
-                viewModel = mapViewModel
+                viewModel = mapViewModel,
+                onOpenParking = {
+                    navController.navigate(Routes.PARKING) {
+                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
             )
         }
 
