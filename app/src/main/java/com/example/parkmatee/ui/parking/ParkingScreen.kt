@@ -65,6 +65,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.data.entity.ParkingType
 import com.example.parkmatee.data.entity.SavedLocation
+import com.example.parkmatee.util.decodePhoto
+import com.example.parkmatee.util.deletePhotoQuietly
 import com.example.parkmatee.util.fetchCurrentLocation
 import com.example.parkmatee.util.isDeviceLocationEnabled
 import com.example.parkmatee.notification.canShowParkingNotifications
@@ -95,6 +97,8 @@ fun ParkingScreen(
 
     var pendingPhotoPath by remember { mutableStateOf<String?>(null) }
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    // Sosta a cui assegnare la foto (null = foto del form di nuova sosta)
+    var photoTarget by remember { mutableStateOf<ParkingSession?>(null) }
     var notificationPermissionRefresh by remember { mutableLongStateOf(0L) }
 
     // Osserva il ciclo di vita per aggiornare lo stato del permesso allarmi esatti al ritorno dalle Impostazioni
@@ -210,13 +214,20 @@ fun ParkingScreen(
             contract = ActivityResultContracts.TakePicture()
         ) { success ->
             val photoPath = pendingPhotoPath
+            val target = photoTarget
             if (success && photoPath != null) {
-                viewModel.onPhotoCaptured(photoPath)
+                if (target != null) {
+                    viewModel.onSessionPhotoChanged(target, photoPath)
+                } else {
+                    viewModel.onPhotoCaptured(photoPath)
+                }
             } else {
+                deletePhotoQuietly(photoPath)
                 viewModel.onPhotoCaptureError("Foto non scattata.")
             }
             pendingPhotoPath = null
             pendingPhotoUri = null
+            photoTarget = null
         }
 
     val cameraPermissionLauncher =
@@ -229,6 +240,7 @@ fun ParkingScreen(
             } else {
                 pendingPhotoPath = null
                 pendingPhotoUri = null
+                photoTarget = null
                 viewModel.onPhotoCaptureError("Permesso fotocamera non concesso.")
             }
         }
@@ -248,7 +260,8 @@ fun ParkingScreen(
         canShowParkingNotifications(context)
     }
 
-    fun startPhotoCapture() {
+    fun launchPhotoCapture(target: ParkingSession?) {
+        photoTarget = target
         try {
             val photoFile = createParkingPhotoFile(context)
             val photoUri = FileProvider.getUriForFile(
@@ -268,9 +281,12 @@ fun ParkingScreen(
         } catch (exception: Exception) {
             pendingPhotoPath = null
             pendingPhotoUri = null
+            photoTarget = null
             viewModel.onPhotoCaptureError("Errore durante la preparazione della fotocamera.")
         }
     }
+
+    fun startPhotoCapture() = launchPhotoCapture(null)
 
     ParkingContent(
         uiState = uiState,
@@ -301,6 +317,8 @@ fun ParkingScreen(
             intent?.let { context.startActivity(it) }
         },
         onTakePhotoClicked = ::startPhotoCapture,
+        onEditSessionNote = viewModel::onSessionNoteChanged,
+        onChangeSessionPhoto = { session -> launchPhotoCapture(session) },
         onRemovePhotoClicked = viewModel::onRemovePhotoClicked,
         onEnableNotificationsClicked = {
             ensureParkingNotificationChannel(context)
@@ -334,6 +352,8 @@ private fun ParkingContent(
     onMapPositionSelected: (LatLng) -> Unit,
     onLocationHelpClicked: (LocationHelp) -> Unit,
     onTakePhotoClicked: () -> Unit,
+    onEditSessionNote: (ParkingSession, String) -> Unit,
+    onChangeSessionPhoto: (ParkingSession) -> Unit,
     onRemovePhotoClicked: () -> Unit,
     onEnableNotificationsClicked: () -> Unit,
     onNoteChanged: (String) -> Unit,
@@ -500,6 +520,7 @@ private fun ParkingContent(
             value = uiState.note,
             onValueChange = onNoteChanged,
             label = { Text(text = "Nota") },
+            supportingText = { Text(text = "${uiState.note.length}/${ParkingViewModel.MAX_NOTE_LENGTH}") },
             minLines = 3,
             modifier = Modifier.fillMaxWidth()
         )
@@ -526,7 +547,9 @@ private fun ParkingContent(
 
         ActiveParkingsSection(
             uiState = uiState,
-            onEndParkingClicked = onEndParkingClicked
+            onEndParkingClicked = onEndParkingClicked,
+            onEditSessionNote = onEditSessionNote,
+            onChangeSessionPhoto = onChangeSessionPhoto
         )
     }
 }
@@ -590,10 +613,10 @@ private fun ParkingPhotoSection(
 }
 
 @Composable
-private fun ParkingPhotoPreview(photoPath: String) {
+internal fun ParkingPhotoPreview(photoPath: String) {
     val bitmap by produceState<Bitmap?>(initialValue = null, photoPath) {
         value = withContext(Dispatchers.IO) {
-            BitmapFactory.decodeFile(photoPath)
+            decodePhoto(photoPath)
         }
     }
 
@@ -756,7 +779,9 @@ private fun VehicleSelector(
 @Composable
 private fun ActiveParkingsSection(
     uiState: ParkingUiState,
-    onEndParkingClicked: (ParkingSession) -> Unit
+    onEndParkingClicked: (ParkingSession) -> Unit,
+    onEditSessionNote: (ParkingSession, String) -> Unit,
+    onChangeSessionPhoto: (ParkingSession) -> Unit
 ) {
     var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
@@ -786,6 +811,8 @@ private fun ActiveParkingsSection(
                     session = session,
                     vehicleName = uiState.vehicles.firstOrNull { it.id == session.vehicleId }?.name ?: "Veicolo sconosciuto",
                     nowMillis = nowMillis,
+                    onEditSessionNote = onEditSessionNote,
+                    onChangeSessionPhoto = onChangeSessionPhoto,
                     onEndParkingClicked = onEndParkingClicked
                 )
             }
@@ -798,8 +825,12 @@ private fun ActiveParkingItem(
     session: ParkingSession,
     vehicleName: String,
     nowMillis: Long,
+    onEditSessionNote: (ParkingSession, String) -> Unit,
+    onChangeSessionPhoto: (ParkingSession) -> Unit,
     onEndParkingClicked: (ParkingSession) -> Unit
 ) {
+    var showNoteDialog by remember(session.id) { mutableStateOf(false) }
+    var noteDraft by remember(session.id, session.note) { mutableStateOf(session.note ?: "") }
     val elapsedMillis = (nowMillis - session.startTime).coerceAtLeast(0L)
     val liveCost = ParkingFormatters.calculateLiveCost(session = session, elapsedMillis = elapsedMillis)
 
@@ -827,6 +858,40 @@ private fun ActiveParkingItem(
             }
 
             session.note?.let { Text(text = "Nota: $it") }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { showNoteDialog = true }) {
+                    Text(text = if (session.note == null) "Aggiungi nota" else "Modifica nota")
+                }
+                OutlinedButton(onClick = { onChangeSessionPhoto(session) }) {
+                    Text(text = if (session.photoPath == null) "Aggiungi foto" else "Cambia foto")
+                }
+            }
+
+            if (showNoteDialog) {
+                AlertDialog(
+                    onDismissRequest = { showNoteDialog = false },
+                    title = { Text("Nota della sosta") },
+                    text = {
+                        OutlinedTextField(
+                            value = noteDraft,
+                            onValueChange = { noteDraft = it.take(ParkingViewModel.MAX_NOTE_LENGTH) },
+                            supportingText = { Text("${noteDraft.length}/${ParkingViewModel.MAX_NOTE_LENGTH}") },
+                            minLines = 3,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    confirmButton = {
+                        Button(onClick = {
+                            onEditSessionNote(session, noteDraft)
+                            showNoteDialog = false
+                        }) { Text("Salva") }
+                    },
+                    dismissButton = {
+                        OutlinedButton(onClick = { showNoteDialog = false }) { Text("Annulla") }
+                    }
+                )
+            }
 
             Button(
                 onClick = { onEndParkingClicked(session) },

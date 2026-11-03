@@ -1,5 +1,6 @@
 package com.example.parkmatee.ui.history
 
+import com.example.parkmatee.ui.parking.ParkingPhotoPreview
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -208,6 +209,10 @@ private fun HistoryItem(
 
             session.note?.let { note ->
                 Text(text = "Nota: $note")
+            }
+
+            session.photoPath?.let { path ->
+                ParkingPhotoPreview(photoPath = path)
             }
         }
     }

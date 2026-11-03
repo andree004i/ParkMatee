@@ -16,6 +16,8 @@ object DatabaseProvider {
                 AppDatabase::class.java,
                 "parkmate_db"
             )
+                .addMigrations(MIGRATION_7_8)
+                // Ripiego solo per versioni senza migrazione (sviluppo); vedi report.
                 .fallbackToDestructiveMigration(true)
                 .build()
 

@@ -1,6 +1,7 @@
 package com.example.parkmatee.data.repository
 
 import com.example.parkmatee.data.dao.ParkingDao
+import com.example.parkmatee.data.dao.StartResult
 import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.data.entity.costAt
 import com.example.parkmatee.data.entity.validationError
@@ -75,10 +76,9 @@ class ParkingRepository(
         parkingDao.deleteParking(session)
     }
 
-    suspend fun closeActiveSessionIfExists(vehicleId: Int): ParkingSession? {
-        val activeSession = parkingDao.getActiveSessionForVehicle(vehicleId) ?: return null
-        val updatedSession = activeSession.closedAt(System.currentTimeMillis())
-        parkingDao.updateParking(updatedSession)
-        return updatedSession
+    /** Avvio atomico con chiusura automatica delle soste attive dello stesso veicolo. */
+    suspend fun startParkingReplacingActive(session: ParkingSession): StartResult {
+        session.validationError()?.let { throw IllegalArgumentException(it) }
+        return parkingDao.startReplacingActive(session, System.currentTimeMillis())
     }
 }

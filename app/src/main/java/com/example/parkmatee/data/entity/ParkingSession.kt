@@ -17,7 +17,11 @@ import java.math.RoundingMode
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index("vehicleId")]
+    indices = [
+        Index("vehicleId"),
+        Index("startTime"),
+        Index(value = ["vehicleId", "endTime"])
+    ]
 )
 data class ParkingSession(
     @PrimaryKey(autoGenerate = true)

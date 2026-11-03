@@ -8,6 +8,9 @@ import com.example.parkmatee.data.entity.Vehicle
 import com.example.parkmatee.data.entity.VehicleType
 import com.example.parkmatee.data.repository.ParkingRepository
 import com.example.parkmatee.data.repository.VehicleRepository
+import com.example.parkmatee.util.deletePhotoQuietly
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -113,7 +116,12 @@ class VehicleViewModel(
             if (parkingRepository.getActiveSessionForVehicle(request.vehicle.id) != null) {
                 _message.value = "Il veicolo e ora parcheggiato: termina prima la sosta."
             } else {
+                // Le soste vengono eliminate a cascata: cancella anche i loro file di foto.
+                val photoPaths = parkingRepository.getParkingsByVehicle(request.vehicle.id)
+                    .first()
+                    .mapNotNull { it.photoPath }
                 vehicleRepository.deleteVehicle(request.vehicle)
+                withContext(Dispatchers.IO) { photoPaths.forEach { deletePhotoQuietly(it) } }
             }
         }
     }

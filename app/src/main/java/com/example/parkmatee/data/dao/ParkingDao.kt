@@ -4,55 +4,79 @@ import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.example.parkmatee.data.entity.ParkingSession
+import com.example.parkmatee.data.entity.costAt
 import kotlinx.coroutines.flow.Flow
 
+/** Esito dell'avvio di una sosta: id della nuova e soste chiuse automaticamente. */
+data class StartResult(
+    val newSessionId: Int,
+    val closedSessions: List<ParkingSession>
+)
+
 @Dao
-interface ParkingDao {
+abstract class ParkingDao {
 
     @Insert
-    suspend fun insertParking(parking: ParkingSession): Long
+    abstract suspend fun insertParking(parking: ParkingSession): Long
 
     @Update
-    suspend fun updateParking(parking: ParkingSession)
+    abstract suspend fun updateParking(parking: ParkingSession)
 
     @Delete
-    suspend fun deleteParking(parking: ParkingSession)
+    abstract suspend fun deleteParking(parking: ParkingSession)
 
-    // --- SESSIONI ATTIVE ---
+    // --- SESSIONI ATTIVE (attiva = endTime IS NULL, unica definizione) ---
     @Query("SELECT * FROM parking_sessions WHERE endTime IS NULL ORDER BY startTime DESC")
-    fun getActiveParkings(): Flow<List<ParkingSession>>
+    abstract fun getActiveParkings(): Flow<List<ParkingSession>>
 
-    @Query("SELECT * FROM parking_sessions WHERE vehicleId = :vehicleId AND endTime IS NULL LIMIT 1")
-    suspend fun getActiveSessionForVehicle(vehicleId: Int): ParkingSession?
+    @Query("SELECT * FROM parking_sessions WHERE vehicleId = :vehicleId AND endTime IS NULL ORDER BY startTime DESC LIMIT 1")
+    abstract suspend fun getActiveSessionForVehicle(vehicleId: Int): ParkingSession?
+
+    @Query("SELECT * FROM parking_sessions WHERE vehicleId = :vehicleId AND endTime IS NULL")
+    abstract suspend fun getActiveSessionsForVehicle(vehicleId: Int): List<ParkingSession>
 
     @Query("SELECT * FROM parking_sessions WHERE savedLocationName = :savedLocationName AND endTime IS NULL LIMIT 1")
-    suspend fun getActiveSessionForSavedLocation(savedLocationName: String): ParkingSession?
+    abstract suspend fun getActiveSessionForSavedLocation(savedLocationName: String): ParkingSession?
 
     @Query("SELECT * FROM parking_sessions WHERE savedLocationId = :savedLocationId AND endTime IS NULL LIMIT 1")
-    suspend fun getActiveSessionForSavedLocationId(savedLocationId: Int): ParkingSession?
+    abstract suspend fun getActiveSessionForSavedLocationId(savedLocationId: Int): ParkingSession?
+
+    /**
+     * Avvio atomico: chiude TUTTE le soste attive del veicolo (endTime + costo finale) e inserisce
+     * la nuova nella stessa transazione. Se qualcosa fallisce, non cambia nulla.
+     * Room non supporta indici univoci parziali, quindi l'unicita della sosta attiva per veicolo
+     * e garantita da questa transazione.
+     */
+    @Transaction
+    open suspend fun startReplacingActive(newSession: ParkingSession, now: Long): StartResult {
+        val closed = getActiveSessionsForVehicle(newSession.vehicleId).map { active ->
+            active.copy(endTime = now, finalCost = active.costAt(now))
+        }
+        closed.forEach { updateParking(it) }
+        val newId = insertParking(newSession).toInt()
+        return StartResult(newSessionId = newId, closedSessions = closed)
+    }
 
     // --- STORICO E STATISTICHE (HistoryScreen & StatsScreen) ---
-    // Storico completo dei parcheggi terminati
     @Query("SELECT * FROM parking_sessions WHERE endTime IS NOT NULL ORDER BY startTime DESC")
-    fun getParkingHistory(): Flow<List<ParkingSession>>
+    abstract fun getParkingHistory(): Flow<List<ParkingSession>>
 
-    // Tutti i parcheggi (attivi e storici) se necessari per le statistiche generali
     @Query("SELECT * FROM parking_sessions ORDER BY startTime DESC")
-    fun getAllParkings(): Flow<List<ParkingSession>>
+    abstract fun getAllParkings(): Flow<List<ParkingSession>>
 
-    // Ricerca per ID singolo
     @Query("SELECT * FROM parking_sessions WHERE id = :id LIMIT 1")
-    suspend fun getParkingById(id: Int): ParkingSession?
+    abstract suspend fun getParkingById(id: Int): ParkingSession?
 
     // --- FILTRI ---
     @Query("SELECT * FROM parking_sessions WHERE vehicleId = :vehicleId ORDER BY startTime DESC")
-    fun getParkingsByVehicle(vehicleId: Int): Flow<List<ParkingSession>>
+    abstract fun getParkingsByVehicle(vehicleId: Int): Flow<List<ParkingSession>>
 
     @Query("SELECT * FROM parking_sessions WHERE type = :type ORDER BY startTime DESC")
-    fun getParkingsByType(type: String): Flow<List<ParkingSession>>
+    abstract fun getParkingsByType(type: String): Flow<List<ParkingSession>>
 
     @Query("SELECT * FROM parking_sessions WHERE startTime >= :from AND startTime <= :to ORDER BY startTime DESC")
-    fun getParkingsByTimeRange(from: Long, to: Long): Flow<List<ParkingSession>>
+    abstract fun getParkingsByTimeRange(from: Long, to: Long): Flow<List<ParkingSession>>
 }

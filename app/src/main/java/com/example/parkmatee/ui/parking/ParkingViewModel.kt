@@ -12,7 +12,11 @@ import com.example.parkmatee.data.repository.VehicleRepository
 import com.example.parkmatee.notification.NotificationConstants
 import com.example.parkmatee.notification.ParkingAlarmScheduler
 import com.example.parkmatee.notification.ParkingWorkScheduler
+import com.example.parkmatee.notification.cancelSessionNotifications
 import com.example.parkmatee.notification.showParkingNotification
+import com.example.parkmatee.util.deletePhotoQuietly
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -101,8 +105,7 @@ class ParkingViewModel(
         viewModelScope.launch {
             try {
                 parkingRepository.endParking(session)
-                workScheduler.cancelPeriodicReminder(session.id)
-                alarmScheduler.cancelTicketAlarms(session.id)
+                cancelSessionJobs(session.id)
 
                 _uiState.update {
                     it.copy(
@@ -119,6 +122,13 @@ class ParkingViewModel(
                 }
             }
         }
+    }
+
+    /** Worker, allarmi e notifiche gia mostrate di una sosta chiusa o sostituita. */
+    private fun cancelSessionJobs(sessionId: Int) {
+        workScheduler.cancelPeriodicReminder(sessionId)
+        alarmScheduler.cancelTicketAlarms(sessionId)
+        cancelSessionNotifications(application, sessionId)
     }
 
     fun onVehicleSelected(vehicleId: Int) {
@@ -219,6 +229,8 @@ class ParkingViewModel(
     }
 
     fun onPhotoCaptured(photoPath: String) {
+        // La foto precedente (non ancora salvata in una sosta) diventerebbe un file orfano.
+        _uiState.value.photoPath?.takeIf { it != photoPath }?.let { deletePhotoQuietly(it) }
         _uiState.update { it.copy(photoPath = photoPath, errorMessage = null, successMessage = "Foto parcheggio aggiunta.") }
     }
 
@@ -227,11 +239,43 @@ class ParkingViewModel(
     }
 
     fun onRemovePhotoClicked() {
+        deletePhotoQuietly(_uiState.value.photoPath)
         _uiState.update { it.copy(photoPath = null, errorMessage = null, successMessage = null) }
     }
 
     fun onNoteChanged(value: String) {
-        _uiState.update { it.copy(note = value, errorMessage = null, successMessage = null) }
+        _uiState.update { it.copy(note = value.take(MAX_NOTE_LENGTH), errorMessage = null, successMessage = null) }
+    }
+
+    /** Modifica della nota di una sosta gia avviata. */
+    fun onSessionNoteChanged(session: ParkingSession, note: String) {
+        viewModelScope.launch {
+            val current = parkingRepository.getParkingById(session.id) ?: return@launch
+            parkingRepository.updateParking(
+                current.copy(note = note.trim().take(MAX_NOTE_LENGTH).ifBlank { null })
+            )
+        }
+    }
+
+    /** Aggiunta o sostituzione della foto di una sosta gia avviata. */
+    fun onSessionPhotoChanged(session: ParkingSession, newPhotoPath: String) {
+        viewModelScope.launch {
+            val current = parkingRepository.getParkingById(session.id)
+            if (current == null) {
+                withContext(Dispatchers.IO) { deletePhotoQuietly(newPhotoPath) }
+                return@launch
+            }
+            parkingRepository.updateParking(current.copy(photoPath = newPhotoPath))
+            if (current.photoPath != null && current.photoPath != newPhotoPath) {
+                withContext(Dispatchers.IO) { deletePhotoQuietly(current.photoPath) }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        // Foto scattata nel form ma mai salvata in una sosta: non lasciare file orfani.
+        deletePhotoQuietly(_uiState.value.photoPath)
+        super.onCleared()
     }
 
     fun onStartParkingClicked() {
@@ -281,14 +325,10 @@ class ParkingViewModel(
 
         viewModelScope.launch {
             try {
-                // FIX BUG: Se esisteva una sessione attiva chiusa implicitamente, cancella i suoi job
-                val closedSession = parkingRepository.closeActiveSessionIfExists(vehicleId = finalVehicleId)
-                closedSession?.let { oldSession ->
-                    workScheduler.cancelPeriodicReminder(oldSession.id)
-                    alarmScheduler.cancelTicketAlarms(oldSession.id)
-                }
-
-                val newSessionId = parkingRepository.startParking(session = session).toInt()
+                // Chiusura automatica delle soste attive del veicolo + inserimento: una sola transazione.
+                val result = parkingRepository.startParkingReplacingActive(session)
+                result.closedSessions.forEach { cancelSessionJobs(it.id) }
+                val newSessionId = result.newSessionId
 
                 showParkingNotification(
                     context = application,
@@ -388,5 +428,6 @@ class ParkingViewModel(
 
     companion object {
         private const val MILLIS_PER_MINUTE = 60_000L
+        const val MAX_NOTE_LENGTH = 500
     }
 }

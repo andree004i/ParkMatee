@@ -83,3 +83,14 @@ fun showParkingNotification(
     NotificationManagerCompat.from(context).notify(notificationId, notification)
     return true
 }
+
+/** Rimuove dalla barra le notifiche gia mostrate per una sosta (chiusa o sostituita). */
+fun cancelSessionNotifications(context: Context, sessionId: Int) {
+    val manager = NotificationManagerCompat.from(context)
+    listOf(
+        NotificationConstants.START_NOTIFICATION_BASE_ID,
+        NotificationConstants.ACTIVE_REMINDER_NOTIFICATION_BASE_ID,
+        NotificationConstants.EXPIRING_NOTIFICATION_BASE_ID,
+        NotificationConstants.EXPIRED_NOTIFICATION_BASE_ID
+    ).forEach { base -> manager.cancel(base + sessionId) }
+}
