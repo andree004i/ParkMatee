@@ -3,6 +3,7 @@ package com.example.parkmatee.data.repository
 import com.example.parkmatee.data.dao.ParkingDao
 import com.example.parkmatee.data.dao.StartResult
 import com.example.parkmatee.data.entity.ParkingSession
+import com.example.parkmatee.data.entity.ParkingType
 import com.example.parkmatee.data.entity.costAt
 import com.example.parkmatee.data.entity.validationError
 import kotlinx.coroutines.flow.Flow
@@ -23,14 +24,14 @@ class ParkingRepository(
     fun getParkingsByVehicle(vehicleId: Int): Flow<List<ParkingSession>> =
         parkingDao.getParkingsByVehicle(vehicleId)
 
-    fun getParkingsByType(type: String): Flow<List<ParkingSession>> =
-        parkingDao.getParkingsByType(type)
-
-    fun getParkingsByTimeRange(
-        from: Long,
-        to: Long
+    /** Storico filtrato in Room: veicolo, tipo e intervallo di inizio sono tutti opzionali. */
+    fun getFilteredHistory(
+        vehicleId: Int?,
+        type: ParkingType?,
+        fromTime: Long?,
+        toTime: Long?
     ): Flow<List<ParkingSession>> =
-        parkingDao.getParkingsByTimeRange(from, to)
+        parkingDao.getFilteredHistory(vehicleId, type?.dbValue, fromTime, toTime)
 
     suspend fun getActiveSessionForVehicle(
         vehicleId: Int

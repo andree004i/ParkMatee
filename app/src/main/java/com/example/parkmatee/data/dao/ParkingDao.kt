@@ -70,13 +70,28 @@ abstract class ParkingDao {
     @Query("SELECT * FROM parking_sessions WHERE id = :id LIMIT 1")
     abstract suspend fun getParkingById(id: Int): ParkingSession?
 
-    // --- FILTRI ---
+    /**
+     * Storico filtrato direttamente in Room. Ogni filtro nullo e ignorato, quindi i criteri sono
+     * combinabili. Solo soste terminate (le attive stanno nella schermata Park e nella Mappa).
+     */
+    @Query(
+        """
+        SELECT * FROM parking_sessions
+        WHERE endTime IS NOT NULL
+          AND (:vehicleId IS NULL OR vehicleId = :vehicleId)
+          AND (:type IS NULL OR type = :type)
+          AND (:fromTime IS NULL OR startTime >= :fromTime)
+          AND (:toTime IS NULL OR startTime <= :toTime)
+        ORDER BY startTime DESC
+        """
+    )
+    abstract fun getFilteredHistory(
+        vehicleId: Int?,
+        type: String?,
+        fromTime: Long?,
+        toTime: Long?
+    ): Flow<List<ParkingSession>>
+
     @Query("SELECT * FROM parking_sessions WHERE vehicleId = :vehicleId ORDER BY startTime DESC")
     abstract fun getParkingsByVehicle(vehicleId: Int): Flow<List<ParkingSession>>
-
-    @Query("SELECT * FROM parking_sessions WHERE type = :type ORDER BY startTime DESC")
-    abstract fun getParkingsByType(type: String): Flow<List<ParkingSession>>
-
-    @Query("SELECT * FROM parking_sessions WHERE startTime >= :from AND startTime <= :to ORDER BY startTime DESC")
-    abstract fun getParkingsByTimeRange(from: Long, to: Long): Flow<List<ParkingSession>>
 }

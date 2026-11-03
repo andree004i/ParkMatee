@@ -114,7 +114,7 @@ fun VehicleScreen(viewModel: VehicleViewModel) {
             text = {
                 Text(
                     if (request.sessionCount > 0) {
-                        "Verranno eliminate definitivamente anche ${request.sessionCount} soste dalla cronologia e dalle statistiche."
+                        "Attenzione: verranno eliminate definitivamente anche tutte le sue ${request.sessionCount} soste (storico, statistiche e foto, comprese eventuali soste attive). L'operazione non si puo annullare."
                     } else {
                         "Il veicolo non ha soste registrate."
                     }
