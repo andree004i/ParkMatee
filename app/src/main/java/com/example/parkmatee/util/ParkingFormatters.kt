@@ -16,7 +16,8 @@ object ParkingFormatters {
     fun formatParkingType(type: ParkingType): String = type.label
 
     fun calculateLiveCost(session: ParkingSession, elapsedMillis: Long): Double =
-        session.costForElapsed(elapsedMillis)
+        // Mai un crash nella UI: con dati incoerenti il costo mostrato e 0.
+        runCatching { session.costForElapsed(elapsedMillis) }.getOrDefault(0.0)
 
     fun formatDuration(durationMillis: Long): String {
         val totalSeconds = durationMillis / 1000L

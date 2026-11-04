@@ -2,7 +2,6 @@ package com.example.parkmatee.ui.map
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +32,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -128,8 +128,6 @@ private fun MapContent(
     onEndParking: (ParkingSession) -> Unit,
     onOpenParking: () -> Unit
 ) {
-    val context = LocalContext.current
-
     val userPosition = if (uiState.userLatitude != null && uiState.userLongitude != null) {
         LatLng(uiState.userLatitude, uiState.userLongitude)
     } else null
@@ -145,11 +143,11 @@ private fun MapContent(
     }
 
     var isMapLoaded by remember { mutableStateOf(false) }
-    var showParkings by remember { mutableStateOf(true) }
-    var showSavedPlaces by remember { mutableStateOf(true) }
-    var selectedSessionId by remember { mutableStateOf<Int?>(null) }
-    // true se l'utente ha mosso la mappa a mano: in quel caso non la riposizioniamo da soli
-    var userMovedCamera by remember { mutableStateOf(false) }
+    // Filtri e selezione sopravvivono alla rotazione dello schermo.
+    var showParkings by rememberSaveable { mutableStateOf(true) }
+    var showSavedPlaces by rememberSaveable { mutableStateOf(true) }
+    var selectedSessionId by rememberSaveable { mutableStateOf<Int?>(null) }
+    // Incrementato da "Centra" per rifare l'inquadratura.
     var recenterTick by remember { mutableLongStateOf(0L) }
 
     // Sosta selezionata: sparisce da sola se nel frattempo viene chiusa
@@ -159,7 +157,6 @@ private fun MapContent(
     val parkingIdsKey = uiState.activeParkings.map { it.id }
     LaunchedEffect(isMapLoaded, parkingIdsKey, recenterTick) {
         if (!isMapLoaded) return@LaunchedEffect
-        if (userMovedCamera && recenterTick == 0L) return@LaunchedEffect
         when {
             parkingPoints.size >= 2 -> {
                 val bounds = LatLngBounds.builder().apply { parkingPoints.forEach { include(it) } }.build()
@@ -178,16 +175,6 @@ private fun MapContent(
     LaunchedEffect(uiState.userLatitude, uiState.userLongitude) {
         if (isMapLoaded && userPosition != null) {
             cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(userPosition, 15f))
-        }
-    }
-
-    // Rileva lo spostamento manuale della mappa
-    LaunchedEffect(cameraPositionState.isMoving) {
-        if (cameraPositionState.isMoving &&
-            cameraPositionState.cameraMoveStartedReason ==
-            com.google.maps.android.compose.CameraMoveStartedReason.GESTURE
-        ) {
-            userMovedCamera = true
         }
     }
 
@@ -216,10 +203,7 @@ private fun MapContent(
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onRequestCurrentLocation) { Text("Usa posizione attuale") }
-            OutlinedButton(onClick = {
-                userMovedCamera = false
-                recenterTick += 1
-            }) { Text("Centra") }
+            OutlinedButton(onClick = { recenterTick += 1 }) { Text("Centra") }
         }
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
