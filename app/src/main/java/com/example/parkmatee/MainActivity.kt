@@ -4,17 +4,13 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import com.example.parkmatee.notification.NotificationConstants
 import com.example.parkmatee.ui.MainScreen
 import com.example.parkmatee.ui.theme.ParkMateeTheme
 
-// Sealed class per tipizzare fortemente le azioni scatenate dalla notifica Geofence
+// Cosa aprire quando l'app viene lanciata toccando una notifica
 sealed class GeofenceIntentAction {
-    data class StartParking(val savedLocationId: Int) : GeofenceIntentAction()
-    data class EndParking(val savedLocationId: Int) : GeofenceIntentAction()
     data class OpenLocation(val savedLocationId: Int) : GeofenceIntentAction()
 
     /** Tocco su una notifica di sosta (promemoria o scadenza): apre la schermata Park. */
@@ -63,19 +59,12 @@ class MainActivity : ComponentActivity() {
         }
 
         val savedLocationId = intent.getIntExtra("EXTRA_SAVED_LOCATION_ID", -1)
-        val geofenceAction = intent.getStringExtra("EXTRA_GEOFENCE_ACTION")
 
         if (savedLocationId == -1) return
 
-        // Mappatura dell'azione richiesta
-        pendingGeofenceAction.value = when (geofenceAction) {
-            "ACTION_START_PARKING" -> GeofenceIntentAction.StartParking(savedLocationId)
-            "ACTION_END_PARKING" -> GeofenceIntentAction.EndParking(savedLocationId)
-            else -> GeofenceIntentAction.OpenLocation(savedLocationId)
-        }
+        pendingGeofenceAction.value = GeofenceIntentAction.OpenLocation(savedLocationId)
 
-        // Rimozione degli extra per evitare la ri-esecuzione all'orizzontale/rotazione schermo
+        // Rimozione dell'extra per evitare la ri-esecuzione alla rotazione dello schermo
         intent.removeExtra("EXTRA_SAVED_LOCATION_ID")
-        intent.removeExtra("EXTRA_GEOFENCE_ACTION")
     }
 }

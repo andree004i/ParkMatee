@@ -12,7 +12,6 @@ import android.content.ContextWrapper
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -49,6 +48,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -77,7 +77,6 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -87,18 +86,17 @@ import kotlinx.coroutines.withContext
 @Composable
 fun ParkingScreen(
     viewModel: ParkingViewModel,
-    savedLocationId: Int = -1,
-    autoStart: Boolean = false,
-    autoEnd: Boolean = false
+    savedLocationId: Int = -1
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    var pendingPhotoPath by remember { mutableStateOf<String?>(null) }
-    var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
-    // Sosta a cui assegnare la foto (null = foto del form di nuova sosta)
-    var photoTarget by remember { mutableStateOf<ParkingSession?>(null) }
+    // Stato dello scatto: rememberSaveable, cosi sopravvive alla rotazione mentre la fotocamera e aperta.
+    var pendingPhotoPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingPhotoUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    // Id della sosta a cui assegnare la foto (null = foto del form di nuova sosta)
+    var photoTargetId by rememberSaveable { mutableStateOf<Int?>(null) }
     var notificationPermissionRefresh by remember { mutableLongStateOf(0L) }
 
     // Osserva il ciclo di vita per aggiornare lo stato del permesso allarmi esatti al ritorno dalle Impostazioni
@@ -114,32 +112,7 @@ fun ParkingScreen(
         }
     }
 
-    var hasHandledGeofenceAction by remember(savedLocationId, autoStart, autoEnd) {
-        mutableStateOf(false)
-    }
-
-    // Si agisce solo quando i dati servono davvero sono stati caricati (luoghi, veicoli, soste),
-    // e l'azione e segnata come gestita solo dopo essere stata eseguita.
-    LaunchedEffect(
-        savedLocationId, autoStart, autoEnd,
-        uiState.savedLocations, uiState.vehicles, uiState.activeParkings
-    ) {
-        if (savedLocationId != -1 && !hasHandledGeofenceAction && uiState.savedLocations.isNotEmpty()) {
-            if (autoStart && uiState.vehicles.isNotEmpty()) {
-                viewModel.onSavedLocationSelected(savedLocationId)
-                viewModel.onStartParkingClicked()
-                hasHandledGeofenceAction = true
-            } else if (autoEnd) {
-                val activeSession = uiState.activeParkings.firstOrNull { it.savedLocationId == savedLocationId }
-                if (activeSession != null) {
-                    viewModel.onEndParkingClicked(activeSession)
-                    hasHandledGeofenceAction = true
-                }
-            }
-        }
-    }
-
-    var showLocationRationale by remember { mutableStateOf(false) }
+    var showLocationRationale by rememberSaveable { mutableStateOf(false) }
 
     fun loadGpsLocation() {
         if (!isDeviceLocationEnabled(context)) {
@@ -218,7 +191,7 @@ fun ParkingScreen(
             contract = ActivityResultContracts.TakePicture()
         ) { success ->
             val photoPath = pendingPhotoPath
-            val target = photoTarget
+            val target = uiState.activeParkings.firstOrNull { it.id == photoTargetId }
             if (success && photoPath != null) {
                 if (target != null) {
                     viewModel.onSessionPhotoChanged(target, photoPath)
@@ -230,21 +203,21 @@ fun ParkingScreen(
                 viewModel.onPhotoCaptureError("Foto non scattata.")
             }
             pendingPhotoPath = null
-            pendingPhotoUri = null
-            photoTarget = null
+            pendingPhotoUriString = null
+            photoTargetId = null
         }
 
     val cameraPermissionLauncher =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission()
         ) { isGranted ->
-            val photoUri = pendingPhotoUri
+            val photoUri = pendingPhotoUriString?.let(Uri::parse)
             if (isGranted && photoUri != null) {
                 takePictureLauncher.launch(photoUri)
             } else {
                 pendingPhotoPath = null
-                pendingPhotoUri = null
-                photoTarget = null
+                pendingPhotoUriString = null
+                photoTargetId = null
                 viewModel.onPhotoCaptureError("Permesso fotocamera non concesso.")
             }
         }
@@ -265,7 +238,7 @@ fun ParkingScreen(
     }
 
     fun launchPhotoCapture(target: ParkingSession?) {
-        photoTarget = target
+        photoTargetId = target?.id
         try {
             val photoFile = createParkingPhotoFile(context)
             val photoUri = FileProvider.getUriForFile(
@@ -275,7 +248,7 @@ fun ParkingScreen(
             )
 
             pendingPhotoPath = photoFile.absolutePath
-            pendingPhotoUri = photoUri
+            pendingPhotoUriString = photoUri.toString()
 
             if (hasCameraPermission(context)) {
                 takePictureLauncher.launch(photoUri)
@@ -284,8 +257,8 @@ fun ParkingScreen(
             }
         } catch (exception: Exception) {
             pendingPhotoPath = null
-            pendingPhotoUri = null
-            photoTarget = null
+            pendingPhotoUriString = null
+            photoTargetId = null
             viewModel.onPhotoCaptureError("Errore durante la preparazione della fotocamera.")
         }
     }
@@ -571,8 +544,8 @@ private fun NotificationReminderSection(
         ) {
             Text(text = "Notifiche parcheggio")
             Text(text = if (notificationsEnabled) "Stato: attive" else "Stato: non attive")
-            Text(text = "Reminder parcheggio attivo: notifica subito e poi ogni 15 minuti tramite WorkManager.")
-            Text(text = "Ticket in scadenza: avviso esatto tramite AlarmManager.")
+            Text(text = "Reminder sosta attiva: una notifica ogni 15 minuti (WorkManager).")
+            Text(text = "Ticket in scadenza: avviso all'orario di scadenza (AlarmManager).")
             Text(text = "Parcheggi monitorati: ${activeParkings.size}")
 
             if (!notificationsEnabled) {

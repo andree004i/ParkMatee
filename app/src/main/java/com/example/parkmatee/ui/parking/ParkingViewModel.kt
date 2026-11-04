@@ -1,6 +1,5 @@
 package com.example.parkmatee.ui.parking
 
-import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -10,11 +9,7 @@ import com.example.parkmatee.data.entity.ParkingType
 import com.example.parkmatee.data.repository.ParkingRepository
 import com.example.parkmatee.data.repository.SavedLocationRepository
 import com.example.parkmatee.data.repository.VehicleRepository
-import com.example.parkmatee.notification.NotificationConstants
 import com.example.parkmatee.notification.ParkingAlarmScheduler
-import com.example.parkmatee.notification.ParkingWorkScheduler
-import com.example.parkmatee.notification.cancelSessionNotifications
-import com.example.parkmatee.notification.showParkingNotification
 import com.example.parkmatee.util.deletePhotoQuietly
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -25,12 +20,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class ParkingViewModel(
-    private val application: Application,
     private val vehicleRepository: VehicleRepository,
     private val parkingRepository: ParkingRepository,
     private val savedLocationRepository: SavedLocationRepository,
     private val alarmScheduler: ParkingAlarmScheduler,
-    private val workScheduler: ParkingWorkScheduler,
     private val sessionService: ParkingSessionService
 ) : ViewModel() {
 
@@ -124,9 +117,6 @@ class ParkingViewModel(
             }
         }
     }
-
-    /** Worker, allarmi e notifiche gia mostrate di una sosta chiusa o sostituita. */
-    private fun cancelSessionJobs(sessionId: Int) = sessionService.cancelJobs(sessionId)
 
     fun onVehicleSelected(vehicleId: Int) {
         _uiState.update { it.copy(selectedVehicleId = vehicleId, errorMessage = null, successMessage = null) }
@@ -326,29 +316,12 @@ class ParkingViewModel(
 
         viewModelScope.launch {
             try {
-                // Chiusura automatica delle soste attive del veicolo + inserimento: una sola transazione.
-                val result = parkingRepository.startParkingReplacingActive(session)
-                result.closedSessions.forEach { cancelSessionJobs(it.id) }
-                val newSessionId = result.newSessionId
-
-                showParkingNotification(
-                    context = application,
-                    notificationId = NotificationConstants.START_NOTIFICATION_BASE_ID + newSessionId,
-                    title = "Parcheggio attivo",
-                    text = "Hai avviato un nuovo parcheggio. Ricordati di terminarlo quando riparti.",
-                    sessionId = newSessionId,
-                    withEndAction = true
+                // Salvataggio (con chiusura atomica della sosta precedente), notifica, reminder
+                // e allarmi del ticket: tutto nel service, condiviso con geofence e notifiche.
+                sessionService.startSession(
+                    session = session,
+                    notificationText = "Hai avviato un nuovo parcheggio. Ricordati di terminarlo quando riparti."
                 )
-
-                workScheduler.schedulePeriodicReminder(newSessionId)
-
-                if (expiryTime != null) {
-                    alarmScheduler.scheduleTicketAlarms(
-                        sessionId = newSessionId,
-                        expiryTimeMillis = expiryTime,
-                        warningMinutes = effectiveState.warningMinutes
-                    )
-                }
 
                 _uiState.update {
                     it.copy(
@@ -409,12 +382,10 @@ class ParkingViewModel(
     private fun String.toValidDoubleOrNull(): Double? = replace(',', '.').toDoubleOrNull()
 
     class Factory(
-        private val application: Application,
         private val vehicleRepository: VehicleRepository,
         private val parkingRepository: ParkingRepository,
         private val savedLocationRepository: SavedLocationRepository,
         private val alarmScheduler: ParkingAlarmScheduler,
-        private val workScheduler: ParkingWorkScheduler,
         private val sessionService: ParkingSessionService
     ) : ViewModelProvider.Factory {
 
@@ -422,12 +393,10 @@ class ParkingViewModel(
             if (modelClass.isAssignableFrom(ParkingViewModel::class.java)) {
                 @Suppress("UNCHECKED_CAST")
                 return ParkingViewModel(
-                    application = application,
                     vehicleRepository = vehicleRepository,
                     parkingRepository = parkingRepository,
                     savedLocationRepository = savedLocationRepository,
                     alarmScheduler = alarmScheduler,
-                    workScheduler = workScheduler,
                     sessionService = sessionService
                 ) as T
             }

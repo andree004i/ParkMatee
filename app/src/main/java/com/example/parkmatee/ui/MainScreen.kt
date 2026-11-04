@@ -36,12 +36,6 @@ fun MainScreen(
     LaunchedEffect(pendingGeofenceAction) {
         if (pendingGeofenceAction != null) {
             val targetRoute = when (pendingGeofenceAction) {
-                is GeofenceIntentAction.StartParking -> {
-                    "${Routes.PARKING}?savedLocationId=${pendingGeofenceAction.savedLocationId}&autoStart=true"
-                }
-                is GeofenceIntentAction.EndParking -> {
-                    "${Routes.PARKING}?savedLocationId=${pendingGeofenceAction.savedLocationId}&autoEnd=true"
-                }
                 is GeofenceIntentAction.OpenSession -> Routes.PARKING
                 is GeofenceIntentAction.OpenLocation -> {
                     "${Routes.SAVED_LOCATIONS}?savedLocationId=${pendingGeofenceAction.savedLocationId}"

@@ -1,6 +1,5 @@
 package com.example.parkmatee.ui
 
-import android.app.Application
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -42,13 +41,11 @@ fun ParkMateNavGraph(
 ) {
     val context = LocalContext.current
 
-    val application = remember(context) { context.applicationContext as Application }
     val container = remember(context) { context.appContainer }
     val vehicleRepository = container.vehicleRepository
     val parkingRepository = container.parkingRepository
     val savedLocationRepository = container.savedLocationRepository
     val alarmScheduler = container.alarmScheduler
-    val workScheduler = container.workScheduler
 
     val vehicleViewModel: VehicleViewModel = viewModel(
         factory = VehicleViewModel.Factory(
@@ -59,12 +56,10 @@ fun ParkMateNavGraph(
 
     val parkingViewModel: ParkingViewModel = viewModel(
         factory = ParkingViewModel.Factory(
-            application = application,
             vehicleRepository = vehicleRepository,
             parkingRepository = parkingRepository,
             savedLocationRepository = savedLocationRepository,
             alarmScheduler = alarmScheduler,
-            workScheduler = workScheduler,
             sessionService = container.sessionService
         )
     )
@@ -110,33 +105,21 @@ fun ParkMateNavGraph(
             )
         }
 
-        // Configurazione rotta PARKING con parametri opzionali per la geofence
+        // Rotta PARKING con luogo salvato opzionale
         composable(
-            route = "${Routes.PARKING}?savedLocationId={savedLocationId}&autoStart={autoStart}&autoEnd={autoEnd}",
+            route = "${Routes.PARKING}?savedLocationId={savedLocationId}",
             arguments = listOf(
                 navArgument("savedLocationId") {
                     type = NavType.IntType
                     defaultValue = -1
-                },
-                navArgument("autoStart") {
-                    type = NavType.BoolType
-                    defaultValue = false
-                },
-                navArgument("autoEnd") {
-                    type = NavType.BoolType
-                    defaultValue = false
                 }
             )
         ) { backStackEntry ->
             val savedLocationId = backStackEntry.arguments?.getInt("savedLocationId") ?: -1
-            val autoStart = backStackEntry.arguments?.getBoolean("autoStart") ?: false
-            val autoEnd = backStackEntry.arguments?.getBoolean("autoEnd") ?: false
 
             ParkingScreen(
                 viewModel = parkingViewModel,
-                savedLocationId = savedLocationId,
-                autoStart = autoStart,
-                autoEnd = autoEnd
+                savedLocationId = savedLocationId
             )
         }
 

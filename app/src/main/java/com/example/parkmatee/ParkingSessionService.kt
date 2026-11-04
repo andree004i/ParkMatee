@@ -72,18 +72,40 @@ class ParkingSessionService(
             savedLocationName = location.name,
             savedLocationId = location.id
         )
+        return startSession(
+            session = session,
+            notificationText = "${vehicle.name} parcheggiato in ${location.name}. Ricordati di terminare la sosta quando riparti."
+        )
+    }
+
+    /**
+     * Avvia una sosta: la salva chiudendo in modo atomico quella attiva dello stesso veicolo,
+     * poi annulla i lavori della sosta chiusa e programma notifica di avvio, reminder periodico
+     * e (se c'e una scadenza) gli allarmi del ticket. Restituisce l'id della nuova sosta.
+     */
+    suspend fun startSession(session: ParkingSession, notificationText: String): Int {
         val result = parkingRepository.startParkingReplacingActive(session)
         result.closedSessions.forEach { cancelJobs(it.id) }
+        val newSessionId = result.newSessionId
 
-        workScheduler.schedulePeriodicReminder(result.newSessionId)
         showParkingNotification(
             context = application,
-            notificationId = NotificationConstants.START_NOTIFICATION_BASE_ID + result.newSessionId,
+            notificationId = NotificationConstants.START_NOTIFICATION_BASE_ID + newSessionId,
             title = "Parcheggio attivo",
-            text = "${vehicle.name} parcheggiato in ${location.name}. Ricordati di terminare la sosta quando riparti.",
-            sessionId = result.newSessionId,
+            text = notificationText,
+            sessionId = newSessionId,
             withEndAction = true
         )
-        return result.newSessionId
+        workScheduler.schedulePeriodicReminder(newSessionId)
+
+        val expiryTime = session.expiryTime
+        if (expiryTime != null) {
+            alarmScheduler.scheduleTicketAlarms(
+                sessionId = newSessionId,
+                expiryTimeMillis = expiryTime,
+                warningMinutes = session.warningMinutes
+            )
+        }
+        return newSessionId
     }
 }
