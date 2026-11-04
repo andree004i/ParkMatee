@@ -9,7 +9,6 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.parkmatee.data.repository.ParkingRepository
 import com.example.parkmatee.data.repository.VehicleRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -28,8 +27,6 @@ class HistoryViewModel(
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
-    private val errorMessage = MutableStateFlow<String?>(null)
-
     private val filters = combine(
         savedStateHandle.getStateFlow(KEY_VEHICLE, NO_VEHICLE),
         savedStateHandle.getStateFlow(KEY_TYPE, HistoryTypeFilter.ALL.name),
@@ -46,23 +43,20 @@ class HistoryViewModel(
         parkingRepository.getFilteredHistory(
             vehicleId = f.vehicleId,
             type = f.type.type,
-            fromTime = f.range.fromMillis(System.currentTimeMillis()),
-            toTime = null
+            fromTime = f.range.fromMillis(System.currentTimeMillis())
         )
     }
 
     val uiState: StateFlow<HistoryUiState> = combine(
         vehicleRepository.getAllVehicles(),
         history,
-        filters,
-        errorMessage
-    ) { vehicles, sessions, f, error ->
+        filters
+    ) { vehicles, sessions, f ->
         HistoryUiState(
             isLoading = false,
             vehicles = vehicles,
             parkingHistory = sessions,
-            filters = f,
-            errorMessage = error
+            filters = f
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HistoryUiState())
 
@@ -94,10 +88,6 @@ class HistoryViewModel(
         savedStateHandle[KEY_VEHICLE] = NO_VEHICLE
         savedStateHandle[KEY_TYPE] = HistoryTypeFilter.ALL.name
         savedStateHandle[KEY_RANGE] = HistoryRange.ALL.name
-    }
-
-    fun onErrorShown() {
-        errorMessage.value = null
     }
 
     class Factory(

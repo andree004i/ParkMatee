@@ -52,8 +52,7 @@ fun HistoryScreen(
         onTypeFilterSelected = viewModel::onTypeFilterSelected,
         onVehicleFilterSelected = viewModel::onVehicleFilterSelected,
         onRangeSelected = viewModel::onRangeSelected,
-        onClearFilters = viewModel::onClearFilters,
-        onErrorShown = viewModel::onErrorShown
+        onClearFilters = viewModel::onClearFilters
     )
 }
 
@@ -63,8 +62,7 @@ private fun HistoryContent(
     onTypeFilterSelected: (HistoryTypeFilter) -> Unit,
     onVehicleFilterSelected: (Int?) -> Unit,
     onRangeSelected: (HistoryRange) -> Unit,
-    onClearFilters: () -> Unit,
-    onErrorShown: () -> Unit
+    onClearFilters: () -> Unit
 ) {
     var selectedSessionId by rememberSaveable { mutableStateOf<Int?>(null) }
     val selectedSession = uiState.parkingHistory.firstOrNull { it.id == selectedSessionId }
@@ -85,10 +83,6 @@ private fun HistoryContent(
             onRangeSelected = onRangeSelected,
             onClearFilters = onClearFilters
         )
-
-        uiState.errorMessage?.let { message ->
-            Text(text = message, color = MaterialTheme.colorScheme.error)
-        }
 
         when {
             uiState.isLoading -> Unit
@@ -122,14 +116,6 @@ private fun HistoryContent(
             vehicle = uiState.vehicles.firstOrNull { it.id == session.vehicleId },
             onDismiss = { selectedSessionId = null }
         )
-    }
-
-    // Se la lista cambia e l'errore resta, l'utente lo vede una volta e poi sparisce al prossimo filtro.
-    if (uiState.errorMessage != null) {
-        androidx.compose.runtime.LaunchedEffect(uiState.errorMessage) {
-            kotlinx.coroutines.delay(4_000L)
-            onErrorShown()
-        }
     }
 }
 
@@ -347,8 +333,8 @@ private fun SessionDetailSheet(
 }
 
 private fun costLabel(session: ParkingSession): String = when {
-    session.finalCost != null -> ParkingFormatters.formatCurrency(session.finalCost)
     session.type == ParkingType.FREE -> "Gratuita"
+    session.finalCost != null -> ParkingFormatters.formatCurrency(session.finalCost)
     else -> "-"
 }
 

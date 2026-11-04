@@ -52,8 +52,7 @@ class StatsViewModel(
         parkingRepository.getFilteredHistory(
             vehicleId = f.vehicleId,
             type = f.type.type,
-            fromTime = f.range.fromMillis(System.currentTimeMillis()),
-            toTime = null
+            fromTime = f.range.fromMillis(System.currentTimeMillis())
         )
     }
 

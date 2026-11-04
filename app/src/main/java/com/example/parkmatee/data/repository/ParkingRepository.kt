@@ -27,10 +27,9 @@ class ParkingRepository(
     fun getFilteredHistory(
         vehicleId: Int?,
         type: ParkingType?,
-        fromTime: Long?,
-        toTime: Long?
+        fromTime: Long?
     ): Flow<List<ParkingSession>> =
-        parkingDao.getFilteredHistory(vehicleId, type?.dbValue, fromTime, toTime)
+        parkingDao.getFilteredHistory(vehicleId, type?.dbValue, fromTime)
 
     suspend fun getActiveSessionForVehicle(
         vehicleId: Int

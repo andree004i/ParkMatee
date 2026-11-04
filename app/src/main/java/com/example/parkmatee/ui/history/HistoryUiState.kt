@@ -63,6 +63,5 @@ data class HistoryUiState(
     val isLoading: Boolean = true,
     val vehicles: List<Vehicle> = emptyList(),
     val parkingHistory: List<ParkingSession> = emptyList(),
-    val filters: HistoryFilters = HistoryFilters(),
-    val errorMessage: String? = null
+    val filters: HistoryFilters = HistoryFilters()
 )

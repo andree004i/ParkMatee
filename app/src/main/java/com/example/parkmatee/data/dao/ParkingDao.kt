@@ -94,15 +94,13 @@ abstract class ParkingDao {
           AND (:vehicleId IS NULL OR vehicleId = :vehicleId)
           AND (:type IS NULL OR type = :type)
           AND (:fromTime IS NULL OR startTime >= :fromTime)
-          AND (:toTime IS NULL OR startTime <= :toTime)
         ORDER BY startTime DESC
         """
     )
     abstract fun getFilteredHistory(
         vehicleId: Int?,
         type: String?,
-        fromTime: Long?,
-        toTime: Long?
+        fromTime: Long?
     ): Flow<List<ParkingSession>>
 
     @Query("SELECT * FROM parking_sessions WHERE vehicleId = :vehicleId ORDER BY startTime DESC")
