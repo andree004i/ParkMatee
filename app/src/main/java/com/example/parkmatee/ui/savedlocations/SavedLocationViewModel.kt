@@ -95,7 +95,7 @@ class SavedLocationViewModel(
 
     fun onDeleteRequested(location: SavedLocation) {
         viewModelScope.launch {
-            val hasActive = parkingRepository.getActiveSessionForSavedLocationId(location.id) != null
+            val hasActive = parkingRepository.getActiveSessionsForSavedLocationId(location.id).isNotEmpty()
             _deleteRequest.value = LocationDeleteRequest(location, hasActive)
         }
     }

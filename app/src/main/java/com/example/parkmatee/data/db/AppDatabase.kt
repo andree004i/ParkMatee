@@ -20,7 +20,8 @@ import com.example.parkmatee.data.entity.Vehicle
 // DatabaseProvider usa fallbackToDestructiveMigration, quindi le tabelle vengono ricreate.
 @Database(
     entities = [Vehicle::class, ParkingSession::class, SavedLocation::class],
-    version = 8
+    version = 8,
+    exportSchema = true
 )
 @TypeConverters(VehicleTypeConverter::class, ParkingTypeConverter::class)
 abstract class AppDatabase : RoomDatabase() {

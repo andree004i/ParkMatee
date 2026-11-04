@@ -4,7 +4,6 @@ import com.example.parkmatee.data.dao.ParkingDao
 import com.example.parkmatee.data.dao.StartResult
 import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.data.entity.ParkingType
-import com.example.parkmatee.data.entity.costAt
 import com.example.parkmatee.data.entity.validationError
 import kotlinx.coroutines.flow.Flow
 
@@ -38,46 +37,18 @@ class ParkingRepository(
     ): ParkingSession? =
         parkingDao.getActiveSessionForVehicle(vehicleId)
 
-    suspend fun getActiveSessionForSavedLocationId(
-        savedLocationId: Int
-    ): ParkingSession? =
-        parkingDao.getActiveSessionForSavedLocationId(savedLocationId)
-
-    suspend fun getActiveSessionForSavedLocation(
-        savedLocationName: String
-    ): ParkingSession? =
-        parkingDao.getActiveSessionForSavedLocation(savedLocationName)
-
     suspend fun getActiveSessionsForSavedLocationId(savedLocationId: Int): List<ParkingSession> =
         parkingDao.getActiveSessionsForSavedLocationId(savedLocationId)
 
-    suspend fun startParking(
-        session: ParkingSession
-    ): Long {
-        // Validazione di dominio: nessun punto d'ingresso puo salvare una sosta incoerente.
-        session.validationError()?.let { throw IllegalArgumentException(it) }
-        return parkingDao.insertParking(session)
-    }
-
-    private fun ParkingSession.closedAt(endTime: Long): ParkingSession =
-        copy(endTime = endTime, finalCost = costAt(endTime))
-
-    suspend fun endParking(
-        session: ParkingSession
-    ) {
-        parkingDao.updateParking(session.closedAt(System.currentTimeMillis()))
+    /** Chiude la sosta (se ancora attiva) con orario e costo finali. */
+    suspend fun endParking(session: ParkingSession) {
+        parkingDao.endActive(session.id, System.currentTimeMillis())
     }
 
     suspend fun updateParking(
         session: ParkingSession
     ) {
         parkingDao.updateParking(session)
-    }
-
-    suspend fun deleteParking(
-        session: ParkingSession
-    ) {
-        parkingDao.deleteParking(session)
     }
 
     /** Avvio atomico con chiusura automatica delle soste attive dello stesso veicolo. */

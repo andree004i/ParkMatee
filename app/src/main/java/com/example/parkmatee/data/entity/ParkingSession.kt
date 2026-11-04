@@ -82,6 +82,13 @@ fun ParkingSession.costForElapsed(elapsedMillis: Long): Double {
 fun ParkingSession.costAt(nowMillis: Long): Double =
     costForElapsed((endTime ?: nowMillis) - startTime)
 
+/**
+ * Come [costAt], ma non lancia mai: se i dati della sosta sono incoerenti con il tipo
+ * restituisce 0. Serve nelle chiusure, che non devono fallire per un dato sporco.
+ */
+fun ParkingSession.costAtOrZero(nowMillis: Long): Double =
+    runCatching { costAt(nowMillis) }.getOrDefault(0.0)
+
 /** Controllo di coerenza di dominio: null se valida, altrimenti il motivo. */
 fun ParkingSession.validationError(): String? = when (type) {
     ParkingType.FREE -> null

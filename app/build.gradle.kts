@@ -13,6 +13,11 @@ val localProperties = Properties().apply {
     }
 }
 
+// Esporta lo schema Room in app/schemas: serve a verificare e testare le migrazioni.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
     namespace = "com.example.parkmatee"
     compileSdk {
