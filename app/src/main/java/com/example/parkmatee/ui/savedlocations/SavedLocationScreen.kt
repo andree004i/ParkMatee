@@ -39,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -51,7 +52,6 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
 
 @Composable
@@ -61,23 +61,32 @@ fun SavedLocationScreen(
 ) {
     val context = LocalContext.current
     val locations by viewModel.locations.collectAsState()
-    var formMode by remember { mutableStateOf<SavedLocationFormMode?>(null) }
-    var pendingGeofenceLocation by remember { mutableStateOf<SavedLocation?>(null) }
+    // Stato salvato alla rotazione: si memorizzano solo valori semplici (id), l'oggetto si ricava dalla lista.
+    var formOpen by rememberSaveable { mutableStateOf(false) }
+    var editingId by rememberSaveable { mutableStateOf<Int?>(null) } // null = aggiunta
+    val formMode: SavedLocationFormMode? = when {
+        !formOpen -> null
+        editingId == null -> SavedLocationFormMode.Add
+        else -> locations.firstOrNull { it.id == editingId }?.let { SavedLocationFormMode.Edit(it) }
+    }
+    var pendingGeofenceLocationId by rememberSaveable { mutableStateOf<Int?>(null) }
+    val pendingGeofenceLocation = locations.firstOrNull { it.id == pendingGeofenceLocationId }
     var permissionRefreshKey by remember { mutableLongStateOf(0L) }
-    var geofencePermissionWarning by remember { mutableStateOf<String?>(null) }
-    var showBackgroundRationale by remember { mutableStateOf(false) }
+    var geofencePermissionWarning by rememberSaveable { mutableStateOf<String?>(null) }
+    var showBackgroundRationale by rememberSaveable { mutableStateOf(false) }
     val deleteRequest by viewModel.deleteRequest.collectAsState()
 
     // Flag per garantire che il deep-link/notifica venga gestito UNA SOLA VOLTA
     // e non si riattivi a ogni aggiornamento della lista 'locations' da Room
-    var hasHandledDeepLink by remember(savedLocationId) { mutableStateOf(false) }
+    var hasHandledDeepLink by rememberSaveable(savedLocationId) { mutableStateOf(false) }
 
     // Intercetta savedLocationId arrivato dalla navigazione/notifica
     LaunchedEffect(savedLocationId, locations) {
         if (savedLocationId != -1 && !hasHandledDeepLink) {
             val locationToEdit = locations.firstOrNull { it.id == savedLocationId }
             if (locationToEdit != null) {
-                formMode = SavedLocationFormMode.Edit(locationToEdit)
+                editingId = locationToEdit.id
+                formOpen = true
                 hasHandledDeepLink = true
             }
         }
@@ -101,7 +110,7 @@ fun SavedLocationScreen(
             )
             refreshPermissions()
         } else {
-            pendingGeofenceLocation = location
+            pendingGeofenceLocationId = location.id
         }
     }
 
@@ -118,7 +127,7 @@ fun SavedLocationScreen(
         } else if (location != null) {
             geofencePermissionWarning = GEOFENCE_PERMISSION_WARNING
         }
-        pendingGeofenceLocation = null
+        pendingGeofenceLocationId = null
         refreshPermissions()
     }
 
@@ -128,7 +137,7 @@ fun SavedLocationScreen(
         val location = pendingGeofenceLocation
         if (location != null && !hasFineLocationPermission(context)) {
             geofencePermissionWarning = GEOFENCE_PERMISSION_WARNING
-            pendingGeofenceLocation = null
+            pendingGeofenceLocationId = null
         } else if (location != null) {
             if (needsBackgroundLocationPermission(context)) {
                 showBackgroundRationale = true
@@ -146,7 +155,7 @@ fun SavedLocationScreen(
     }
 
     fun requestGeofencePermissionsFor(location: SavedLocation) {
-        pendingGeofenceLocation = location
+        pendingGeofenceLocationId = location.id
 
         if (!hasFineLocationPermission(context)) {
             fineLocationPermissionLauncher.launch(
@@ -178,7 +187,7 @@ fun SavedLocationScreen(
         AlertDialog(
             onDismissRequest = {
                 showBackgroundRationale = false
-                pendingGeofenceLocation = null
+                pendingGeofenceLocationId = null
             },
             title = { Text("Posizione anche in background") },
             text = {
@@ -200,7 +209,7 @@ fun SavedLocationScreen(
             dismissButton = {
                 OutlinedButton(onClick = {
                     showBackgroundRationale = false
-                    pendingGeofenceLocation = null
+                    pendingGeofenceLocationId = null
                 }) { Text("Annulla") }
             }
         )
@@ -210,7 +219,8 @@ fun SavedLocationScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
-                    formMode = SavedLocationFormMode.Add
+                    editingId = null
+                    formOpen = true
                 }
             ) {
                 Text("+")
@@ -256,11 +266,11 @@ fun SavedLocationScreen(
                             longitude = longitude,
                             radiusMeters = radius
                         ) { error ->
-                            if (error == null) formMode = null else onError(error)
+                            if (error == null) formOpen = false else onError(error)
                         }
                     },
                     onCancel = {
-                        formMode = null
+                        formOpen = false
                     }
                 )
             }
@@ -272,7 +282,8 @@ fun SavedLocationScreen(
                     SavedLocationItem(
                         location = location,
                         onEdit = {
-                            formMode = SavedLocationFormMode.Edit(it)
+                            editingId = it.id
+                            formOpen = true
                         },
                         onDelete = viewModel::onDeleteRequested,
                         onToggleGeofence = { selectedLocation ->
@@ -442,20 +453,20 @@ private fun SavedLocationForm(
     val context = LocalContext.current
     val editingLocation = (mode as? SavedLocationFormMode.Edit)?.location
 
-    var name by remember(editingLocation?.id) {
+    var name by rememberSaveable(editingLocation?.id) {
         mutableStateOf(editingLocation?.name ?: "")
     }
     // In creazione i campi partono vuoti: niente luogo "Bologna" salvato per sbaglio.
-    var latitude by remember(editingLocation?.id) {
+    var latitude by rememberSaveable(editingLocation?.id) {
         mutableStateOf(editingLocation?.latitude?.toString() ?: "")
     }
-    var longitude by remember(editingLocation?.id) {
+    var longitude by rememberSaveable(editingLocation?.id) {
         mutableStateOf(editingLocation?.longitude?.toString() ?: "")
     }
-    var radius by remember(editingLocation?.id) {
+    var radius by rememberSaveable(editingLocation?.id) {
         mutableStateOf(editingLocation?.geofenceRadiusMeters ?: DEFAULT_RADIUS_METERS)
     }
-    var errorMessage by remember(editingLocation?.id) {
+    var errorMessage by rememberSaveable(editingLocation?.id) {
         mutableStateOf<String?>(null)
     }
     var isLoadingGps by remember { mutableStateOf(false) }
