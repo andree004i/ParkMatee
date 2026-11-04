@@ -23,8 +23,6 @@ class TicketAlarmReceiver : BroadcastReceiver() {
                 val session = context.appContainer.parkingRepository.getParkingById(sessionId)
                 if (session == null || session.endTime != null) return@launch
 
-                ensureParkingNotificationChannel(context)
-
                 when (alarmType) {
                     ALARM_TYPE_EXPIRING -> showTicketExpiringNotification(context, session)
                     ALARM_TYPE_EXPIRED -> showTicketExpiredNotification(context, session)
@@ -38,7 +36,6 @@ class TicketAlarmReceiver : BroadcastReceiver() {
     companion object {
         const val EXTRA_SESSION_ID = "extra_session_id"
         const val EXTRA_ALARM_TYPE = "extra_alarm_type"
-        const val EXTRA_WARNING_MINUTES = "extra_warning_minutes"
         const val ALARM_TYPE_EXPIRING = "alarm_expiring"
         const val ALARM_TYPE_EXPIRED = "alarm_expired"
     }

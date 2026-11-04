@@ -247,9 +247,9 @@ class ParkingViewModel(
     /** Modifica della nota di una sosta gia avviata. */
     fun onSessionNoteChanged(session: ParkingSession, note: String) {
         viewModelScope.launch {
-            val current = parkingRepository.getParkingById(session.id) ?: return@launch
-            parkingRepository.updateParking(
-                current.copy(note = note.trim().take(MAX_NOTE_LENGTH).ifBlank { null })
+            parkingRepository.updateNote(
+                session.id,
+                note.trim().take(MAX_NOTE_LENGTH).ifBlank { null }
             )
         }
     }
@@ -262,7 +262,7 @@ class ParkingViewModel(
                 withContext(Dispatchers.IO) { deletePhotoQuietly(newPhotoPath) }
                 return@launch
             }
-            parkingRepository.updateParking(current.copy(photoPath = newPhotoPath))
+            parkingRepository.updatePhotoPath(session.id, newPhotoPath)
             if (current.photoPath != null && current.photoPath != newPhotoPath) {
                 withContext(Dispatchers.IO) { deletePhotoQuietly(current.photoPath) }
             }
@@ -340,7 +340,7 @@ class ParkingViewModel(
                     withEndAction = true
                 )
 
-                workScheduler.schedulePeriodicReminder(newSessionId, startTime)
+                workScheduler.schedulePeriodicReminder(newSessionId)
 
                 if (expiryTime != null) {
                     alarmScheduler.scheduleTicketAlarms(

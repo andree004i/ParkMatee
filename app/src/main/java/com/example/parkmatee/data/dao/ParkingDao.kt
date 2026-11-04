@@ -72,6 +72,14 @@ abstract class ParkingDao {
     @Query("SELECT * FROM parking_sessions WHERE endTime IS NOT NULL ORDER BY startTime DESC")
     abstract fun getParkingHistory(): Flow<List<ParkingSession>>
 
+    // Aggiornamenti mirati: toccano una sola colonna, quindi non possono riaprire o sovrascrivere
+    // una sosta chiusa nel frattempo.
+    @Query("UPDATE parking_sessions SET note = :note WHERE id = :id")
+    abstract suspend fun updateNote(id: Int, note: String?)
+
+    @Query("UPDATE parking_sessions SET photoPath = :photoPath WHERE id = :id")
+    abstract suspend fun updatePhotoPath(id: Int, photoPath: String?)
+
     @Query("SELECT * FROM parking_sessions WHERE id = :id LIMIT 1")
     abstract suspend fun getParkingById(id: Int): ParkingSession?
 

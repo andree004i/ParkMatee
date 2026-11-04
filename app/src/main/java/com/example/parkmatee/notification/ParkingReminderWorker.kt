@@ -73,6 +73,5 @@ class ParkingReminderWorker(
 
     companion object {
         const val KEY_SESSION_ID = "key_session_id"
-        const val KEY_START_TIME = "key_start_time"
     }
 }

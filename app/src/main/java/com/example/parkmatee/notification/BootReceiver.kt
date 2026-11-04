@@ -43,7 +43,7 @@ class BootReceiver : BroadcastReceiver() {
 
                     activeSessions.forEach { session: ParkingSession ->
                         // Ripristina il WorkManager (idempotente)
-                        workScheduler.schedulePeriodicReminder(session.id, session.startTime)
+                        workScheduler.schedulePeriodicReminder(session.id)
 
                         // Ripristina l'AlarmManager leggendo il warningMinutes dall'entità salvata
                         session.expiryTime?.let { expiry: Long ->

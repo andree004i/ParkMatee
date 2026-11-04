@@ -11,11 +11,8 @@ class ParkingWorkScheduler(context: Context) {
 
     private val workManager = WorkManager.getInstance(context)
 
-    fun schedulePeriodicReminder(sessionId: Int, startTimeMillis: Long) {
-        val inputData = workDataOf(
-            ParkingReminderWorker.KEY_SESSION_ID to sessionId,
-            ParkingReminderWorker.KEY_START_TIME to startTimeMillis
-        )
+    fun schedulePeriodicReminder(sessionId: Int) {
+        val inputData = workDataOf(ParkingReminderWorker.KEY_SESSION_ID to sessionId)
 
         val workRequest = PeriodicWorkRequestBuilder<ParkingReminderWorker>(
             15, TimeUnit.MINUTES

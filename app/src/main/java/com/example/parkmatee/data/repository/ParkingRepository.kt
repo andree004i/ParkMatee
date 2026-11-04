@@ -45,15 +45,16 @@ class ParkingRepository(
         parkingDao.endActive(session.id, System.currentTimeMillis())
     }
 
-    suspend fun updateParking(
-        session: ParkingSession
-    ) {
-        parkingDao.updateParking(session)
-    }
+    suspend fun updateNote(sessionId: Int, note: String?) =
+        parkingDao.updateNote(sessionId, note)
+
+    suspend fun updatePhotoPath(sessionId: Int, photoPath: String?) =
+        parkingDao.updatePhotoPath(sessionId, photoPath)
 
     /** Avvio atomico con chiusura automatica delle soste attive dello stesso veicolo. */
     suspend fun startParkingReplacingActive(session: ParkingSession): StartResult {
         session.validationError()?.let { throw IllegalArgumentException(it) }
-        return parkingDao.startReplacingActive(session, System.currentTimeMillis())
+        // La sosta precedente termina esattamente quando inizia la nuova: nessuna sovrapposizione.
+        return parkingDao.startReplacingActive(session, session.startTime)
     }
 }

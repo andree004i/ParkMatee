@@ -38,7 +38,6 @@ class ParkingAlarmScheduler(private val context: Context) {
             val intent = Intent(context, TicketAlarmReceiver::class.java).apply {
                 putExtra(TicketAlarmReceiver.EXTRA_SESSION_ID, sessionId)
                 putExtra(TicketAlarmReceiver.EXTRA_ALARM_TYPE, TicketAlarmReceiver.ALARM_TYPE_EXPIRING)
-                putExtra(TicketAlarmReceiver.EXTRA_WARNING_MINUTES, warningMinutes)
             }
             val pendingIntent = PendingIntent.getBroadcast(
                 context,

@@ -75,7 +75,7 @@ class ParkingSessionService(
         val result = parkingRepository.startParkingReplacingActive(session)
         result.closedSessions.forEach { cancelJobs(it.id) }
 
-        workScheduler.schedulePeriodicReminder(result.newSessionId, now)
+        workScheduler.schedulePeriodicReminder(result.newSessionId)
         showParkingNotification(
             context = application,
             notificationId = NotificationConstants.START_NOTIFICATION_BASE_ID + result.newSessionId,
