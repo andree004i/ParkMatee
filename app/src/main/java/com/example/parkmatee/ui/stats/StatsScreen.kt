@@ -196,8 +196,8 @@ private fun ChartsTab(uiState: StatsUiState, metric: StatsMetric, modifier: Modi
                     )
                 }
 
-                BucketColumnChart(
-                    buckets = byVehicle,
+                CategoryBars(
+                    items = byVehicle,
                     metric = metric,
                     selectedIndex = selectedVehicle,
                     onSelect = { selectedVehicle = it }

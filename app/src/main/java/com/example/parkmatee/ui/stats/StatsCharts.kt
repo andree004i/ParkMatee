@@ -21,6 +21,16 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
 import com.example.parkmatee.util.ParkingFormatters
 
 private fun formatMetric(value: Double, metric: StatsMetric): String = when (metric) {
@@ -29,8 +39,8 @@ private fun formatMetric(value: Double, metric: StatsMetric): String = when (met
 }
 
 /**
- * Grafico a colonne (periodi o veicoli), disegnato con il Canvas di Compose.
- * Interattivo: un tap o il trascinamento orizzontale selezionano la colonna.
+ * Grafico a colonne nel tempo, disegnato con il Canvas di Compose.
+ * Interattivo: un tap o il trascinamento orizzontale selezionano il periodo.
  */
 @Composable
 fun BucketColumnChart(
@@ -69,7 +79,7 @@ fun BucketColumnChart(
         modifier = modifier
             .fillMaxWidth()
             .height(210.dp)
-            .semantics { contentDescription = "Grafico a colonne: ${metric.label}. Tocca o trascina per selezionare." }
+            .semantics { contentDescription = "Grafico a colonne: ${metric.label} per periodo. Tocca o trascina per selezionare." }
             .pointerInput(buckets.size) {
                 fun indexAt(x: Float): Int {
                     val left = leftPad.toPx()
@@ -136,6 +146,57 @@ fun BucketColumnChart(
                         xPaint
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Barre orizzontali per categoria (qui: veicolo). Ogni riga ha nome, barra proporzionale al
+ * valore e importo; il tocco su una riga la seleziona. Nessun Canvas: solo Box e Row.
+ */
+@Composable
+fun CategoryBars(
+    items: List<StatsBucket>,
+    metric: StatsMetric,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val maxValue = (items.maxOfOrNull { it.value(metric) } ?: 0.0).takeIf { it > 0.0 } ?: 1.0
+    val barColor = MaterialTheme.colorScheme.primary
+
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items.forEachIndexed { index, item ->
+            val fraction = (item.value(metric) / maxValue).toFloat().coerceIn(0f, 1f)
+            val selected = index == selectedIndex
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(index) },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = item.label,
+                    modifier = Modifier.width(88.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1
+                )
+                Box(modifier = Modifier.weight(1f)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(fraction)
+                            .height(20.dp)
+                            .background(if (selected) barColor else barColor.copy(alpha = 0.45f))
+                    )
+                }
+                Text(
+                    text = formatMetric(item.value(metric), metric),
+                    modifier = Modifier.width(64.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1
+                )
             }
         }
     }
