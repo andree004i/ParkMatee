@@ -24,11 +24,11 @@ import kotlinx.coroutines.launch
 
 /**
  * Riceve le transizioni dei geofence anche con l'app chiusa.
- * - DWELL (permanenza nell'area): propone di avviare la sosta per il veicolo suggerito.
+ * - ENTER (ingresso nell'area): propone di avviare la sosta per il veicolo suggerito.
  * - EXIT (uscita): propone di terminare la sosta collegata al luogo.
  * Le azioni della notifica sono eseguite da [GeofenceActionReceiver] senza aprire l'app.
  * Se non c'e nulla da proporre (sosta gia attiva all'arrivo, nessuna sosta all'uscita) non
- * viene mostrata alcuna notifica: meno rumore e meno falsi positivi.
+ * viene mostrata alcuna notifica.
  */
 class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
 
@@ -38,7 +38,7 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
 
         val transition = geofencingEvent.geofenceTransition
         val inside = when (transition) {
-            Geofence.GEOFENCE_TRANSITION_DWELL -> true
+            Geofence.GEOFENCE_TRANSITION_ENTER -> true
             Geofence.GEOFENCE_TRANSITION_EXIT -> false
             else -> return
         }
@@ -57,9 +57,7 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
                             context = context,
                             savedLocationId = savedLocationId,
                             locationName = SavedLocationGeofenceRequestId.decodeName(requestId),
-                            inside = inside,
-                            distanceMeters = null,
-                            informational = false
+                            inside = inside
                         )
                     } catch (e: Exception) {
                         Log.e(TAG, "Errore durante la preparazione della notifica del geofence", e)
@@ -77,67 +75,25 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
         private const val CONTENT_REQUEST_CODE = 50_001
         private const val ACTION_REQUEST_CODE = 52_000
 
-        /**
-         * Notifica di stato mostrata quando si attiva il geofence: indica distanza e, a differenza
-         * delle transizioni reali, spiega anche quando non c'e nessuna azione da proporre.
-         */
-        suspend fun showSavedLocationStatusNotification(
-            context: Context,
-            savedLocationId: Int,
-            locationName: String,
-            isInside: Boolean,
-            distanceMeters: Float
-        ) {
-            notifyForLocation(
-                context = context,
-                savedLocationId = savedLocationId,
-                locationName = locationName,
-                inside = isInside,
-                distanceMeters = distanceMeters.toInt(),
-                informational = true
-            )
-        }
-
         private suspend fun notifyForLocation(
             context: Context,
             savedLocationId: Int,
             locationName: String,
-            inside: Boolean,
-            distanceMeters: Int?,
-            informational: Boolean
+            inside: Boolean
         ) {
             val container = context.appContainer
             val activeHere = container.parkingRepository.getActiveSessionsForSavedLocationId(savedLocationId)
-            val distanceText = distanceMeters?.let { " Distanza: $it m." } ?: ""
 
             if (inside) {
-                if (activeHere.isNotEmpty()) {
-                    if (informational) {
-                        show(
-                            context, savedLocationId,
-                            title = "Sosta gia attiva in $locationName",
-                            text = "Sei gia parcheggiato in questo luogo.$distanceText",
-                            actionLabel = null, actionIntent = null
-                        )
-                    }
-                    return
-                }
+                // Sosta gia attiva qui: nulla da proporre.
+                if (activeHere.isNotEmpty()) return
                 val vehicle = container.sessionService.suggestVehicleToPark()
-                if (vehicle == null) {
-                    if (informational) {
-                        show(
-                            context, savedLocationId,
-                            title = "Sei dentro il raggio di $locationName",
-                            text = "Nessun veicolo libero da parcheggiare.$distanceText",
-                            actionLabel = null, actionIntent = null
-                        )
-                    }
-                    return
-                }
+                // Tutti i veicoli sono gia parcheggiati: nulla da proporre.
+                if (vehicle == null) return
                 show(
                     context, savedLocationId,
                     title = "Sei in $locationName",
-                    text = "Vuoi avviare la sosta per ${vehicle.name}?$distanceText",
+                    text = "Vuoi avviare la sosta per ${vehicle.name}?",
                     actionLabel = "Avvia sosta",
                     actionIntent = actionBroadcast(
                         context = context,
@@ -147,14 +103,7 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
                 )
             } else {
                 when (activeHere.size) {
-                    0 -> if (informational) {
-                        show(
-                            context, savedLocationId,
-                            title = "Sei fuori dal raggio di $locationName",
-                            text = "Nessuna sosta attiva collegata a questo luogo.$distanceText",
-                            actionLabel = null, actionIntent = null
-                        )
-                    }
+                    0 -> Unit // nessuna sosta collegata a questo luogo: nulla da proporre
 
                     1 -> {
                         val session = activeHere.first()
@@ -163,7 +112,7 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
                         show(
                             context, savedLocationId,
                             title = "Ti sei allontanato da $locationName",
-                            text = "Vuoi terminare la sosta di $vehicleName?$distanceText",
+                            text = "Vuoi terminare la sosta di $vehicleName?",
                             actionLabel = "Termina sosta",
                             actionIntent = actionBroadcast(
                                 context = context,
@@ -176,7 +125,7 @@ class SavedLocationGeofenceBroadcastReceiver : BroadcastReceiver() {
                     else -> show(
                         context, savedLocationId,
                         title = "Ti sei allontanato da $locationName",
-                        text = "Ci sono ${activeHere.size} veicoli parcheggiati qui: apri l'app per scegliere quale terminare.$distanceText",
+                        text = "Ci sono ${activeHere.size} veicoli parcheggiati qui: apri l'app per scegliere quale terminare.",
                         actionLabel = "Apri ParkMate",
                         actionIntent = openAppPendingIntent(context, ACTION_REQUEST_CODE + savedLocationId, savedLocationId)
                     )

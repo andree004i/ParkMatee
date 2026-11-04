@@ -351,7 +351,7 @@ private fun SavedLocationGeofenceSection(
             )
             Text(text = geofenceUiState.message)
             Text(text = "Luoghi monitorati: ${geofenceUiState.monitoredCount}")
-            Text(text = "Permanenza nell'area (30 s): propone di avviare la sosta, indicando il veicolo.")
+            Text(text = "Ingresso nell'area: propone di avviare la sosta, indicando il veicolo.")
             Text(text = "Uscita: propone di terminare la sosta; l'azione funziona anche senza aprire l'app.")
 
             permissionWarning?.let { warning ->
