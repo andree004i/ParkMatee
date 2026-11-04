@@ -10,14 +10,8 @@ import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.data.entity.SavedLocation
 import com.example.parkmatee.data.entity.Vehicle
 
-// L'istanza viene creata esclusivamente da DatabaseProvider (unica fonte di verita).
-// Versione 8: indici su startTime e (vehicleId, endTime), con MIGRATION_7_8 (nessuna perdita di dati).
-// Versione 7: ParkingSession.savedLocationId (collegamento stabile al luogo salvato).
-// Versione 6: ParkingSession.type e' ora un enum (ParkingType) con TypeConverter.
-// Versione 5: Vehicle.type e' ora un enum (VehicleType) con TypeConverter.
-// Versione 4: lo schema delle entity era cambiato senza aumentare la versione, quindi i
-// database gia creati con la v3 non erano piu validi (Room: "cannot verify the data integrity").
-// DatabaseProvider usa fallbackToDestructiveMigration, quindi le tabelle vengono ricreate.
+// Database locale dell'app (Room). L'istanza e creata una sola volta da DatabaseProvider.
+// Versione 8: indici su startTime e (vehicleId, endTime), con MIGRATION_7_8.
 @Database(
     entities = [Vehicle::class, ParkingSession::class, SavedLocation::class],
     version = 8,

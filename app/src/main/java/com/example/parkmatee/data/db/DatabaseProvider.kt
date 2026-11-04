@@ -19,6 +19,8 @@ object DatabaseProvider {
                 .addMigrations(MIGRATION_7_8)
                 // Ripiego solo per versioni senza migrazione (sviluppo); vedi report.
                 .fallbackToDestructiveMigration(true)
+                // Anche il passaggio a una versione piu vecchia ricrea il database, invece di crashare.
+                .fallbackToDestructiveMigrationOnDowngrade(true)
                 .build()
 
             INSTANCE = instance
