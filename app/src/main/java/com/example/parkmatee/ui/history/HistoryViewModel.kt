@@ -6,11 +6,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
-import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.data.repository.ParkingRepository
 import com.example.parkmatee.data.repository.VehicleRepository
-import com.example.parkmatee.util.deletePhotoQuietly
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -19,7 +16,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * I filtri vivono nello [SavedStateHandle]: sopravvivono a rotazione, cambio tab E morte del
@@ -98,19 +94,6 @@ class HistoryViewModel(
         savedStateHandle[KEY_VEHICLE] = NO_VEHICLE
         savedStateHandle[KEY_TYPE] = HistoryTypeFilter.ALL.name
         savedStateHandle[KEY_RANGE] = HistoryRange.ALL.name
-    }
-
-    /** Elimina una sosta TERMINATA dallo storico, con la sua foto. Le attive non si toccano qui. */
-    fun onDeleteSession(session: ParkingSession) {
-        if (session.endTime == null) return
-        viewModelScope.launch {
-            try {
-                parkingRepository.deleteParking(session)
-                withContext(Dispatchers.IO) { deletePhotoQuietly(session.photoPath) }
-            } catch (e: Exception) {
-                errorMessage.value = "Errore durante l'eliminazione della sosta."
-            }
-        }
     }
 
     fun onErrorShown() {

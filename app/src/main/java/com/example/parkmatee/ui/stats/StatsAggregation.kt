@@ -1,6 +1,7 @@
 package com.example.parkmatee.ui.stats
 
 import com.example.parkmatee.data.entity.ParkingSession
+import com.example.parkmatee.data.entity.Vehicle
 import com.example.parkmatee.data.entity.costAt
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -32,9 +33,6 @@ data class StatsBucket(
         StatsMetric.COUNT -> count.toDouble()
     }
 }
-
-/** Punto della heat map: coordinate e peso. */
-data class HeatPoint(val latitude: Double, val longitude: Double, val weight: Double)
 
 /**
  * Costo di una sosta terminata: costo finale salvato, altrimenti ricalcolato.
@@ -121,14 +119,18 @@ fun aggregateBuckets(
     }
 }
 
-/** Punti per la heat map. Con la metrica costo, se nessuna sosta costa nulla si usa il conteggio. */
-fun buildHeatPoints(sessions: List<ParkingSession>, metric: StatsMetric): List<HeatPoint> {
-    val useCost = metric == StatsMetric.COST && sessions.any { it.statsCost() > 0.0 }
-    return sessions.map { session ->
-        HeatPoint(
-            latitude = session.latitude,
-            longitude = session.longitude,
-            weight = if (useCost) session.statsCost() else 1.0
-        )
-    }
-}
+/**
+ * Aggrega le soste per veicolo (categoria): una colonna per veicolo con costo totale e numero di
+ * soste. Riusa [StatsBucket], cosi il grafico a colonne e lo stesso dei periodi.
+ */
+fun aggregateByVehicle(sessions: List<ParkingSession>, vehicles: List<Vehicle>): List<StatsBucket> =
+    sessions.groupBy { it.vehicleId }
+        .map { (vehicleId, list) ->
+            StatsBucket(
+                startMillis = 0L,
+                label = vehicles.firstOrNull { it.id == vehicleId }?.name ?: "Veicolo",
+                cost = Math.round(list.sumOf { it.statsCost() } * 100.0) / 100.0,
+                count = list.size
+            )
+        }
+        .sortedBy { it.label }

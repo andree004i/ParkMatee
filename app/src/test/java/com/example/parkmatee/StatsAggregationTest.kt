@@ -5,7 +5,9 @@ import com.example.parkmatee.data.entity.ParkingType
 import com.example.parkmatee.ui.stats.StatsGranularity
 import com.example.parkmatee.ui.stats.StatsMetric
 import com.example.parkmatee.ui.stats.aggregateBuckets
-import com.example.parkmatee.ui.stats.buildHeatPoints
+import com.example.parkmatee.data.entity.Vehicle
+import com.example.parkmatee.data.entity.VehicleType
+import com.example.parkmatee.ui.stats.aggregateByVehicle
 import org.junit.Assert.assertEquals
 import java.util.Calendar
 import java.util.Locale
@@ -82,12 +84,18 @@ class StatsAggregationTest {
     }
 
     @Test
-    fun heatPointsFallBackToCountWhenAllSessionsAreFree() {
-        val free = ParkingSession(
-            vehicleId = 1, type = ParkingType.FREE, startTime = now - 3_600_000L, endTime = now,
-            latitude = 44.5, longitude = 11.3, finalCost = 0.0
+    fun aggregateByVehicleSumsCostAndCountPerVehicle() {
+        val vehicles = listOf(
+            Vehicle(id = 1, name = "Panda", type = VehicleType.CAR),
+            Vehicle(id = 2, name = "Bici", type = VehicleType.BICYCLE)
         )
-        val points = buildHeatPoints(listOf(free, free), StatsMetric.COST)
-        assertEquals(listOf(1.0, 1.0), points.map { it.weight })
+        val a = session(now - 7_200_000L, 2.0)
+        val b = session(now - 3_600_000L, 3.0)
+        val c = session(now - 1_800_000L, 1.0).copy(vehicleId = 2)
+        val result = aggregateByVehicle(listOf(a, b, c), vehicles)
+        assertEquals(listOf("Bici", "Panda"), result.map { it.label })
+        assertEquals(5.0, result[1].cost, 0.001)
+        assertEquals(2, result[1].count)
+        assertEquals(1, result[0].count)
     }
 }

@@ -112,10 +112,6 @@ class StatsViewModel(
             val end = session.endTime ?: session.startTime
             ((end - session.startTime) / MILLIS_PER_MINUTE).coerceAtLeast(0L)
         }
-        val costByType = ParkingType.entries.associateWith { type ->
-            list.filter { it.type == type }.sumOf { it.statsCost() }.roundCents()
-        }
-        val countByType = ParkingType.entries.associateWith { type -> list.count { it.type == type } }
 
         return StatsUiState(
             isLoading = false,
@@ -124,9 +120,7 @@ class StatsViewModel(
             sessions = list,
             totalCost = list.sumOf { it.statsCost() }.roundCents(),
             averageDurationMinutes = if (durations.isEmpty()) 0L else durations.sum() / durations.size,
-            longestDurationMinutes = durations.maxOrNull() ?: 0L,
-            costByType = costByType,
-            countByType = countByType
+            longestDurationMinutes = durations.maxOrNull() ?: 0L
         )
     }
 

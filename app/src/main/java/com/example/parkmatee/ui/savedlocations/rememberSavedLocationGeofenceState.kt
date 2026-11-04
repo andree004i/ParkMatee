@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.compose.runtime.Composable
@@ -122,8 +121,7 @@ fun canShowSavedLocationGeofenceNotifications(
 }
 
 internal fun createSavedLocationGeofence(
-    location: SavedLocation,
-    responsivenessMillis: Int
+    location: SavedLocation
 ): Geofence {
     return Geofence.Builder()
         .setRequestId(SavedLocationGeofenceRequestId.encode(location))
@@ -138,15 +136,8 @@ internal fun createSavedLocationGeofence(
             Geofence.GEOFENCE_TRANSITION_ENTER or
                     Geofence.GEOFENCE_TRANSITION_EXIT
         )
-        .setNotificationResponsiveness(responsivenessMillis)
         .setExpirationDuration(Geofence.NEVER_EXPIRE)
         .build()
-}
-
-/** Reattivita massima (e consumo massimo) solo nelle build di debug, utile per la demo. */
-internal fun geofenceResponsivenessMillis(context: Context): Int {
-    val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-    return if (debuggable) 0 else 60_000
 }
 
 internal fun createSavedLocationGeofencePendingIntent(

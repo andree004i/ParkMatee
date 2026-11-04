@@ -146,11 +146,6 @@ fun SavedLocationScreen(
     }
 
     fun requestGeofencePermissionsFor(location: SavedLocation) {
-        if (locations.count { it.geofenceEnabled } >= MAX_SAVED_LOCATION_GEOFENCES) {
-            geofencePermissionWarning =
-                "Hai raggiunto il limite di $MAX_SAVED_LOCATION_GEOFENCES geofence attivi: disattivane uno per attivarne un altro."
-            return
-        }
         pendingGeofenceLocation = location
 
         if (!hasFineLocationPermission(context)) {

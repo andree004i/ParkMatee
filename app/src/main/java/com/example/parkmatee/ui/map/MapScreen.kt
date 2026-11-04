@@ -1,11 +1,9 @@
 package com.example.parkmatee.ui.map
 
 import android.Manifest
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -309,8 +307,7 @@ private fun MapContent(
                         selectedSessionId = null
                         onEndParking(session)
                     },
-                    onOpen = onOpenParking,
-                    onNavigate = { openNavigation(context, session, vehicleName) }
+                    onOpen = onOpenParking
                 )
             } else {
                 Card(modifier = Modifier.fillMaxWidth()) {
@@ -355,8 +352,7 @@ private fun SelectedParkingCard(
     session: ParkingSession,
     vehicleName: String,
     onEnd: () -> Unit,
-    onOpen: () -> Unit,
-    onNavigate: () -> Unit
+    onOpen: () -> Unit
 ) {
     // Ticker confinato alla card e legato al ciclo di vita: la mappa non si ricompone ogni secondo
     // e il timer si ferma quando l'app va in background.
@@ -391,18 +387,8 @@ private fun SelectedParkingCard(
             ) {
                 Button(onClick = onEnd) { Text("Termina") }
                 OutlinedButton(onClick = onOpen) { Text("Dettaglio") }
-                OutlinedButton(onClick = onNavigate) { Text("Naviga") }
             }
         }
-    }
-}
-
-private fun openNavigation(context: Context, session: ParkingSession, label: String) {
-    val uri = Uri.parse("geo:${session.latitude},${session.longitude}?q=${session.latitude},${session.longitude}(${Uri.encode(label)})")
-    try {
-        context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    } catch (_: ActivityNotFoundException) {
-        // Nessuna app di mappe installata: nessuna azione.
     }
 }
 

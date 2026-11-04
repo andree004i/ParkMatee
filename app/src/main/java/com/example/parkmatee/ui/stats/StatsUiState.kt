@@ -1,7 +1,6 @@
 package com.example.parkmatee.ui.stats
 
 import com.example.parkmatee.data.entity.ParkingSession
-import com.example.parkmatee.data.entity.ParkingType
 import com.example.parkmatee.data.entity.Vehicle
 import com.example.parkmatee.ui.history.HistoryFilters
 
@@ -14,7 +13,5 @@ data class StatsUiState(
     val totalCost: Double = 0.0,
     val averageDurationMinutes: Long = 0L,
     val longestDurationMinutes: Long = 0L,
-    val costByType: Map<ParkingType, Double> = emptyMap(),
-    val countByType: Map<ParkingType, Int> = emptyMap(),
     val errorMessage: String? = null
 )
