@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
@@ -36,6 +35,12 @@ import com.example.parkmatee.util.ParkingFormatters
 private fun formatMetric(value: Double, metric: StatsMetric): String = when (metric) {
     StatsMetric.COST -> ParkingFormatters.formatCurrency(value)
     StatsMetric.COUNT -> value.toInt().toString()
+}
+
+/** Indice della colonna sotto la coordinata [x] (area di disegno: da [leftPx] a [widthPx]). */
+private fun indexAt(x: Float, leftPx: Float, widthPx: Float, count: Int): Int {
+    val slot = (widthPx - leftPx) / count.coerceAtLeast(1)
+    return ((x - leftPx) / slot).toInt().coerceIn(0, (count - 1).coerceAtLeast(0))
 }
 
 /**
@@ -81,21 +86,17 @@ fun BucketColumnChart(
             .height(210.dp)
             .semantics { contentDescription = "Grafico a colonne: ${metric.label} per periodo. Tocca o trascina per selezionare." }
             .pointerInput(buckets.size) {
-                fun indexAt(x: Float): Int {
-                    val left = leftPad.toPx()
-                    val slot = (size.width - left) / buckets.size.coerceAtLeast(1)
-                    return ((x - left) / slot).toInt().coerceIn(0, (buckets.size - 1).coerceAtLeast(0))
+                detectTapGestures { offset ->
+                    if (buckets.isNotEmpty()) {
+                        onSelect(indexAt(offset.x, leftPad.toPx(), size.width.toFloat(), buckets.size))
+                    }
                 }
-                detectTapGestures { offset -> if (buckets.isNotEmpty()) onSelect(indexAt(offset.x)) }
             }
             .pointerInput(buckets.size) {
-                fun indexAt(x: Float): Int {
-                    val left = leftPad.toPx()
-                    val slot = (size.width - left) / buckets.size.coerceAtLeast(1)
-                    return ((x - left) / slot).toInt().coerceIn(0, (buckets.size - 1).coerceAtLeast(0))
-                }
                 detectHorizontalDragGestures { change, _ ->
-                    if (buckets.isNotEmpty()) onSelect(indexAt(change.position.x))
+                    if (buckets.isNotEmpty()) {
+                        onSelect(indexAt(change.position.x, leftPad.toPx(), size.width.toFloat(), buckets.size))
+                    }
                 }
             }
     ) {

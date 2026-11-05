@@ -122,11 +122,11 @@ private fun ChartsTab(uiState: StatsUiState, metric: StatsMetric, modifier: Modi
     val buckets = remember(uiState.sessions, granularity) {
         aggregateBuckets(uiState.sessions, granularity, System.currentTimeMillis())
     }
-    var selectedBucket by remember(buckets) { mutableIntStateOf((buckets.size - 1).coerceAtLeast(0)) }
+    var selectedBucket by rememberSaveable(buckets) { mutableIntStateOf((buckets.size - 1).coerceAtLeast(0)) }
     val byVehicle = remember(uiState.sessions, uiState.vehicles) {
         aggregateByVehicle(uiState.sessions, uiState.vehicles)
     }
-    var selectedVehicle by remember(byVehicle) { mutableIntStateOf(0) }
+    var selectedVehicle by rememberSaveable(byVehicle) { mutableIntStateOf(0) }
 
     Column(
         modifier = modifier

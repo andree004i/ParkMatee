@@ -7,7 +7,7 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.example.parkmatee.data.entity.ParkingSession
-import com.example.parkmatee.data.entity.ParkingType
+import com.example.parkmatee.data.entity.Vehicle
 import com.example.parkmatee.data.repository.ParkingRepository
 import com.example.parkmatee.data.repository.VehicleRepository
 import com.example.parkmatee.ui.history.HistoryFilters
@@ -103,7 +103,7 @@ class StatsViewModel(
     }
 
     private fun buildState(
-        vehicles: List<com.example.parkmatee.data.entity.Vehicle>,
+        vehicles: List<Vehicle>,
         list: List<ParkingSession>,
         f: HistoryFilters
     ): StatsUiState {
