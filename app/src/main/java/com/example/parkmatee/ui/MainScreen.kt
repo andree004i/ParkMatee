@@ -17,7 +17,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.example.parkmatee.GeofenceIntentAction
+import com.example.parkmatee.NotificationTarget
 
 data class BottomNavItem(
     val route: String,
@@ -27,18 +27,18 @@ data class BottomNavItem(
 
 @Composable
 fun MainScreen(
-    pendingGeofenceAction: GeofenceIntentAction? = null,
+    pendingNotificationTarget: NotificationTarget? = null,
     onActionConsumed: () -> Unit = {}
 ) {
     val navController = rememberNavController()
 
     // Intercetta l'azione pendente ed esegue la navigazione ONE-SHOT senza restoreState
-    LaunchedEffect(pendingGeofenceAction) {
-        if (pendingGeofenceAction != null) {
-            val targetRoute = when (pendingGeofenceAction) {
-                is GeofenceIntentAction.OpenSession -> Routes.PARKING
-                is GeofenceIntentAction.OpenLocation -> {
-                    "${Routes.SAVED_LOCATIONS}?savedLocationId=${pendingGeofenceAction.savedLocationId}"
+    LaunchedEffect(pendingNotificationTarget) {
+        if (pendingNotificationTarget != null) {
+            val targetRoute = when (pendingNotificationTarget) {
+                is NotificationTarget.OpenSession -> Routes.PARKING
+                is NotificationTarget.OpenLocation -> {
+                    "${Routes.SAVED_LOCATIONS}?savedLocationId=${pendingNotificationTarget.savedLocationId}"
                 }
             }
 

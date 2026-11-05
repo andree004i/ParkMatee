@@ -10,31 +10,32 @@ import com.example.parkmatee.ui.MainScreen
 import com.example.parkmatee.ui.theme.ParkMateeTheme
 
 // Cosa aprire quando l'app viene lanciata toccando una notifica
-sealed class GeofenceIntentAction {
-    data class OpenLocation(val savedLocationId: Int) : GeofenceIntentAction()
+sealed class NotificationTarget {
+    /** Tocco su una notifica del geofence: apre il luogo salvato. */
+    data class OpenLocation(val savedLocationId: Int) : NotificationTarget()
 
     /** Tocco su una notifica di sosta (promemoria o scadenza): apre la schermata Park. */
-    data class OpenSession(val sessionId: Int) : GeofenceIntentAction()
+    data class OpenSession(val sessionId: Int) : NotificationTarget()
 }
 
 class MainActivity : ComponentActivity() {
 
     // Stato reattivo dell'Activity per catturare l'azione prima o durante il montaggio Compose
-    private val pendingGeofenceAction = mutableStateOf<GeofenceIntentAction?>(null)
+    private val pendingNotificationTarget = mutableStateOf<NotificationTarget?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Gestione dell'Intent in caso di Cold Start (app chiusa)
-        handleGeofenceIntent(intent)
+        // Solo al primo avvio: dopo una rotazione o un ripristino l'intent e gia stato gestito.
+        if (savedInstanceState == null) handleNotificationIntent(intent)
 
         setContent {
             ParkMateeTheme {
                 MainScreen(
-                    pendingGeofenceAction = pendingGeofenceAction.value,
+                    pendingNotificationTarget = pendingNotificationTarget.value,
                     onActionConsumed = {
                         // Consumato: resetta lo stato per evitare ri-trigger
-                        pendingGeofenceAction.value = null
+                        pendingNotificationTarget.value = null
                     }
                 )
             }
@@ -45,15 +46,15 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         // Gestione dell'Intent se l'Activity era gia attiva in background/foreground
-        handleGeofenceIntent(intent)
+        handleNotificationIntent(intent)
     }
 
-    private fun handleGeofenceIntent(intent: Intent?) {
+    private fun handleNotificationIntent(intent: Intent?) {
         if (intent == null) return
 
         val openSessionId = intent.getIntExtra(NotificationConstants.EXTRA_OPEN_SESSION_ID, -1)
         if (openSessionId != -1) {
-            pendingGeofenceAction.value = GeofenceIntentAction.OpenSession(openSessionId)
+            pendingNotificationTarget.value = NotificationTarget.OpenSession(openSessionId)
             intent.removeExtra(NotificationConstants.EXTRA_OPEN_SESSION_ID)
             return
         }
@@ -62,7 +63,7 @@ class MainActivity : ComponentActivity() {
 
         if (savedLocationId == -1) return
 
-        pendingGeofenceAction.value = GeofenceIntentAction.OpenLocation(savedLocationId)
+        pendingNotificationTarget.value = NotificationTarget.OpenLocation(savedLocationId)
 
         // Rimozione dell'extra per evitare la ri-esecuzione alla rotazione dello schermo
         intent.removeExtra("EXTRA_SAVED_LOCATION_ID")
