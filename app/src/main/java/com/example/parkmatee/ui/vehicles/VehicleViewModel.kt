@@ -132,8 +132,11 @@ class VehicleViewModel(
         private val parkingRepository: ParkingRepository
     ) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            @Suppress("UNCHECKED_CAST")
-            return VehicleViewModel(vehicleRepository, parkingRepository) as T
+            if (modelClass.isAssignableFrom(VehicleViewModel::class.java)) {
+                @Suppress("UNCHECKED_CAST")
+                return VehicleViewModel(vehicleRepository, parkingRepository) as T
+            }
+            throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }
     }
 }

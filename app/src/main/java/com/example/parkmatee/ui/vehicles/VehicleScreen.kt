@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
@@ -28,10 +27,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.example.parkmatee.data.entity.Vehicle
 import com.example.parkmatee.data.entity.VehicleType
 
 @Composable
@@ -39,8 +38,10 @@ fun VehicleScreen(viewModel: VehicleViewModel) {
     val vehicles by viewModel.vehicles.collectAsState()
     val deleteRequest by viewModel.deleteRequest.collectAsState()
     val message by viewModel.message.collectAsState()
-    var showAddDialog by remember { mutableStateOf(false) }
-    var vehicleToEdit by remember { mutableStateOf<VehicleWithStatus?>(null) }
+    // Stato salvato alla rotazione: per la modifica si memorizza solo l'id del veicolo.
+    var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    var editingId by rememberSaveable { mutableStateOf<Int?>(null) }
+    val vehicleToEdit = vehicles.firstOrNull { it.vehicle.id == editingId }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -68,7 +69,7 @@ fun VehicleScreen(viewModel: VehicleViewModel) {
             items(vehicles, key = { it.vehicle.id }) { item ->
                 VehicleItem(
                     item = item,
-                    onEdit = { vehicleToEdit = it },
+                    onEdit = { editingId = it.vehicle.id },
                     onDelete = { viewModel.onDeleteRequested(it) }
                 )
             }
@@ -100,10 +101,10 @@ fun VehicleScreen(viewModel: VehicleViewModel) {
             typeEditable = !item.isParked,
             onConfirm = { name, type, onError ->
                 viewModel.saveVehicle(item.vehicle, name, type) { error ->
-                    if (error == null) vehicleToEdit = null else onError(error)
+                    if (error == null) editingId = null else onError(error)
                 }
             },
-            onDismiss = { vehicleToEdit = null }
+            onDismiss = { editingId = null }
         )
     }
 
@@ -114,7 +115,7 @@ fun VehicleScreen(viewModel: VehicleViewModel) {
             text = {
                 Text(
                     if (request.sessionCount > 0) {
-                        "Attenzione: verranno eliminate definitivamente anche tutte le sue ${request.sessionCount} soste (storico, statistiche e foto, comprese eventuali soste attive). L'operazione non si puo annullare."
+                        "Attenzione: verranno eliminate definitivamente anche tutte le sue ${request.sessionCount} soste (storico, statistiche e foto). L'operazione non si puo annullare."
                     } else {
                         "Il veicolo non ha soste registrate."
                     }
@@ -159,9 +160,12 @@ fun VehicleItem(
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
-                AssistChip(
-                    onClick = {},
-                    label = { Text(if (item.isParked) "Parcheggiato" else "Libero") }
+                // Solo un'etichetta di stato, non un pulsante.
+                Text(
+                    text = if (item.isParked) "Parcheggiato" else "Libero",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (item.isParked) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
@@ -197,9 +201,9 @@ fun VehicleDialog(
     onConfirm: (name: String, type: VehicleType, onError: (String) -> Unit) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var name by remember(initialName) { mutableStateOf(initialName) }
-    var type by remember(initialType) { mutableStateOf(initialType) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
+    var type by rememberSaveable(initialType) { mutableStateOf(initialType) }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
