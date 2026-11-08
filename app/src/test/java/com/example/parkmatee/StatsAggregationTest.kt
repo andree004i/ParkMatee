@@ -3,7 +3,6 @@ package com.example.parkmatee
 import com.example.parkmatee.data.entity.ParkingSession
 import com.example.parkmatee.data.entity.ParkingType
 import com.example.parkmatee.ui.stats.StatsGranularity
-import com.example.parkmatee.ui.stats.StatsMetric
 import com.example.parkmatee.ui.stats.aggregateBuckets
 import com.example.parkmatee.data.entity.Vehicle
 import com.example.parkmatee.data.entity.VehicleType
